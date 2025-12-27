@@ -1,1 +1,36 @@
 @import "tailwindcss";
+
+/* 隐藏 Next.js 开发模式下的错误悬浮球和覆盖层 */
+#__next-build-watcher,
+nextjs-portal,
+[data-nextjs-dialog-overlay],
+[data-nextjs-toast],
+[data-nextjs-dialog],
+[data-nextjs-scroll-lock] {
+  display: none !important;
+}
+
+/* 隐藏错误边框 */
+[data-nextjs-dialog-overlay] ~ * {
+  outline: none !important;
+}
+
+/* 动态边框旋转动画 */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 边框光流动画 - 平滑流动 */
+@keyframes border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}

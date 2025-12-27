@@ -5,63 +5,73 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Settings, User, Database, Bell } from "lucide-react";
+import { User, Lock, Loader2 } from "lucide-react";
+import api from "@/lib/api";
 
-const defaultDialogModels = ["gpt-4.1", "gpt-4o-mini", "deepseek-chat", "qwen-max"];
-const SETTINGS_KEY = "sora_settings";
+interface UserProfile {
+  id: number;
+  username: string;
+  email: string;
+  credits: number;
+  createdAt: string;
+}
 
 export default function SettingsPage() {
-  const [username, setUsername] = useState("创作者");
-  const [email, setEmail] = useState("");
-  const [availableDialogModels, setAvailableDialogModels] = useState(defaultDialogModels);
-  const [selectedDialogModel, setSelectedDialogModel] = useState(defaultDialogModels[0]);
-  const [customDialogModel, setCustomDialogModel] = useState("");
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingModels, setSavingModels] = useState(false);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // 修改密码
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return;
-      const stored = JSON.parse(raw);
-      if (stored.username) setUsername(stored.username);
-      if (stored.email) setEmail(stored.email);
-      if (stored.availableDialogModels?.length) {
-        setAvailableDialogModels(stored.availableDialogModels);
-      }
-      if (stored.selectedDialogModel) {
-        setSelectedDialogModel(stored.selectedDialogModel);
-      }
-    } catch (error) {
-      console.warn("Failed to load settings", error);
-    }
+    fetchProfile();
   }, []);
 
-  const currentSettings = () => ({
-    username,
-    email,
-    availableDialogModels,
-    selectedDialogModel,
-  });
-
-  const persistSettings = async () => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(currentSettings()));
+  const fetchProfile = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get("/user/profile");
+      setProfile(response.data);
+    } catch (error) {
+      console.error("获取用户信息失败", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSaveProfile = async () => {
-    setSavingProfile(true);
-    await persistSettings();
-    setSavingProfile(false);
-    alert("账户信息已保存");
-  };
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      alert("请填写所有密码字段");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert("两次输入的新密码不一致");
+      return;
+    }
+    if (newPassword.length < 6) {
+      alert("新密码长度至少6位");
+      return;
+    }
 
-  const handleSaveModels = async () => {
-    setSavingModels(true);
-    await persistSettings();
-    setSavingModels(false);
-    alert("对话模型配置已保存");
+    try {
+      setChangingPassword(true);
+      await api.post("/user/change-password", {
+        oldPassword,
+        newPassword,
+      });
+      alert("密码修改成功");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      const message = error.response?.data?.error || "密码修改失败";
+      alert(message);
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   return (
@@ -71,11 +81,11 @@ export default function SettingsPage() {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-300 to-gray-500 bg-clip-text text-transparent">
             ⚙️ 系统设置
           </h1>
-          <p className="text-gray-400 mt-2">配置账户信息与对话模型</p>
+          <p className="text-gray-400 mt-2">查看账户信息与修改密码</p>
         </div>
 
         <div className="space-y-6">
-          {/* 账户设置 */}
+          {/* 账户信息 */}
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -84,120 +94,102 @@ export default function SettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>用户名</Label>
-                <Input 
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="bg-black/30 border-white/10"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>邮箱</Label>
-                <Input 
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="bg-black/30 border-white/10"
-                />
-              </div>
-              <Button className="bg-purple-600 hover:bg-purple-700" onClick={handleSaveProfile} disabled={savingProfile}>
-                {savingProfile ? "保存中..." : "保存更改"}
-              </Button>
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-purple-400" />
+                  <span className="ml-2 text-gray-400">加载中...</span>
+                </div>
+              ) : profile ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label className="text-gray-400">用户名</Label>
+                      <div className="bg-black/30 border border-white/10 rounded-md px-3 py-2">
+                        {profile.username}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-400">邮箱</Label>
+                      <div className="bg-black/30 border border-white/10 rounded-md px-3 py-2">
+                        {profile.email || "未设置"}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-400">积分余额</Label>
+                      <div className="bg-black/30 border border-white/10 rounded-md px-3 py-2">
+                        {profile.credits}
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-gray-400">注册时间</Label>
+                      <div className="bg-black/30 border border-white/10 rounded-md px-3 py-2">
+                        {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : "未知"}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  获取用户信息失败，请刷新页面重试
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* 对话模型管理 */}
+          {/* 修改密码 */}
           <Card className="bg-white/5 border-white/10">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-400" />
-                对话模型配置
+                <Lock className="w-5 h-5 text-blue-400" />
+                修改密码
               </CardTitle>
               <CardDescription className="text-gray-400">
-                选择用于 AI 对话、分镜生成、提示词优化的默认模型，可自定义第三方模型名称
+                定期修改密码可以提高账户安全性
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <Label>预设模型</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {availableDialogModels.map((model) => (
-                    <button
-                      key={model}
-                      type="button"
-                      onClick={() => setSelectedDialogModel(model)}
-                      className={`border rounded-lg px-3 py-2 text-sm text-left transition-all ${
-                        selectedDialogModel === model
-                          ? "border-purple-400 bg-purple-500/10 text-white"
-                          : "border-white/10 text-gray-300 hover:border-white/30"
-                      }`}
-                    >
-                      <span className="font-semibold">{model}</span>
-                      {selectedDialogModel === model && (
-                        <p className="text-xs text-purple-300 mt-1">当前默认</p>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="space-y-2">
-                <Label>添加自定义模型</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={customDialogModel}
-                    onChange={(e) => setCustomDialogModel(e.target.value)}
-                    placeholder="例如：my-proxy-model"
-                    className="bg-black/30 border-white/10"
-                  />
-                  <Button
-                    type="button"
-                    className="bg-blue-600 hover:bg-blue-700"
-                    disabled={!customDialogModel.trim()}
-                    onClick={() => {
-                      if (!customDialogModel.trim()) return;
-                      const newModel = customDialogModel.trim();
-                      setAvailableDialogModels((prev) => {
-                        if (prev.includes(newModel)) {
-                          return prev;
-                        }
-                        return [...prev, newModel];
-                      });
-                      setSelectedDialogModel(newModel);
-                      setCustomDialogModel("");
-                    }}
-                  >
-                    添加
-                  </Button>
-                </div>
-                <p className="text-xs text-gray-500">可用于接入自定义代理/第三方模型。</p>
+                <Label>旧密码</Label>
+                <Input 
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="请输入当前密码"
+                  className="bg-black/30 border-white/10"
+                />
               </div>
-
-              <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleSaveModels} disabled={savingModels}>
-                {savingModels ? "保存中..." : "保存对话模型配置"}
+              <div className="space-y-2">
+                <Label>新密码</Label>
+                <Input 
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="请输入新密码（至少6位）"
+                  className="bg-black/30 border-white/10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>确认新密码</Label>
+                <Input 
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="请再次输入新密码"
+                  className="bg-black/30 border-white/10"
+                />
+              </div>
+              <Button 
+                className="bg-blue-600 hover:bg-blue-700" 
+                onClick={handleChangePassword} 
+                disabled={changingPassword}
+              >
+                {changingPassword ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    修改中...
+                  </>
+                ) : "修改密码"}
               </Button>
-            </CardContent>
-          </Card>
-
-          {/* 通知设置 */}
-          <Card className="bg-white/5 border-white/10">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="w-5 h-5 text-yellow-400" />
-                通知设置
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4" defaultChecked />
-                <span>视频生成完成时通知我</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" className="w-4 h-4" />
-                <span>项目协作邀请通知</span>
-              </label>
             </CardContent>
           </Card>
         </div>

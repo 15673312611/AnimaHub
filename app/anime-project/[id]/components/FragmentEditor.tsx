@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { 
   ArrowLeft, 
   Image as ImageIcon, 
@@ -20,7 +20,8 @@ import {
   MoreHorizontal,
   Download,
   Trash2,
-  RefreshCw
+  RefreshCw,
+  BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,11 +33,13 @@ import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 import { handleApiError, safeAsync } from "@/lib/error-handler";
+import { useProjectWebSocket } from "@/lib/useWebSocket";
 
 // Components
 import { AssetPicker } from "./AssetPicker"; // We will create a simple inline picker or mock it
 import ImageUploader from "./ImageUploader";
 import AssetSelectorDialog from "./AssetSelectorDialog";
+import ScriptSelectorDialog from "./ScriptSelectorDialog";
 
 interface FragmentEditorProps {
   projectId: number;
@@ -116,9 +119,6 @@ export default function FragmentEditor({
   // Loading
   const [generating, setGenerating] = useState(false);
   
-  // 轮询状态
-  const [polling, setPolling] = useState(false);
-  
   // 通用上传对话框（角色/场景/物品/特效/姿态/参考图/尾帧）
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadTarget, setUploadTarget] = useState<"char" | "scene" | "prop" | "effect" | "pose" | "refImage" | "endImage">("char");
@@ -127,6 +127,9 @@ export default function FragmentEditor({
   
   // Right Side Gallery Filter
   const [galleryFilter, setGalleryFilter] = useState<"all" | "video" | "image">("all");
+  
+  // Script Selector
+  const [scriptDialogOpen, setScriptDialogOpen] = useState(false);
 
   // -- Handlers --
 
@@ -193,6 +196,27 @@ export default function FragmentEditor({
     
     onUpdate();
   };
+  
+  const handleScriptShotSelect = (shot: any, characters: any[], scenes: any[]) => {
+    // 填充提示词
+    setPrompt(shot.prompt);
+    
+    // 添加人物到参考图（如果有图片）
+    if (characters.length > 0 && characters[0].imageUrl) {
+      setRefImage(characters[0].imageUrl);
+      setSelectedChar(characters[0]);
+    }
+    
+    // 添加场景到参考图（如果有图片）
+    if (scenes.length > 0 && scenes[0].imageUrl) {
+      if (!refImage) {
+        setRefImage(scenes[0].imageUrl);
+      }
+      setSelectedScene(scenes[0]);
+    }
+    
+    toast("已加载剧本镜头", "success");
+  };
 
   const handleGenerate = async () => {
     if (!prompt && creationMode === 'image') {
@@ -255,13 +279,6 @@ export default function FragmentEditor({
         successMessage: creationMode === 'video' ? "🎬 视频生成任务已提交，正在处理中..." : "🖼️ 图片生成成功",
         errorMessage: undefined,
         onSuccess: () => {
-          if (creationMode === 'video') {
-            // 首次同步延迟 10 秒，避免 Dorado 刚创建后立刻查询返回 task not found
-            setTimeout(() => {
-              api.post(`/projects/${projectId}/assets/sync`).catch(() => {});
-            }, 10000);
-            startPolling();
-          }
           onUpdate();
         }
       }
@@ -270,43 +287,24 @@ export default function FragmentEditor({
     setGenerating(false);
   };
   
-  // 开始轮询
-  const startPolling = () => {
-    setPolling(true);
-  };
-  
-  // 轮询效果
-  useEffect(() => {
-    if (!polling) return;
-    
-    const interval = setInterval(async () => {
-      try {
-        // 先触发一次后端同步，再刷新项目
-        try {
-          await api.post(`/projects/${projectId}/assets/sync`);
-        } catch (e) { /* ignore */ }
-        await onUpdate();
-        
-        // 检查是否还有生成中的任务
-        const hasGenerating = generatedVideos.some(v => v.status === 'GENERATING');
-        if (!hasGenerating) {
-          setPolling(false);
-        }
-      } catch (error) {
-        console.error('轮询更新失败:', error);
+  // WebSocket 消息处理
+  const handleWebSocketMessage = useCallback((message: any) => {
+    if (message.type === 'VIDEO_STATUS_UPDATE') {
+      console.log('📥 收到视频状态更新:', message);
+      // 刷新数据
+      onUpdate();
+      
+      // 显示通知
+      if (message.status === 'COMPLETED') {
+        toast("🎉 视频生成完成！", "success");
+      } else if (message.status === 'FAILED') {
+        toast(`❌ 视频生成失败: ${message.errorMessage || '未知错误'}`, "error");
       }
-    }, 20000); // 每3秒轮询一次
-    
-    return () => clearInterval(interval);
-  }, [polling, generatedVideos, onUpdate]);
-  
-  // 初始检查是否有生成中的任务
-  useEffect(() => {
-    const hasGenerating = generatedVideos.some(v => v.status === 'GENERATING');
-    if (hasGenerating && !polling) {
-      setPolling(true);
     }
-  }, [generatedVideos]);
+  }, [onUpdate, toast]);
+  
+  // 订阅 WebSocket
+  useProjectWebSocket(projectId, handleWebSocketMessage);
 
   return (
     <div className="flex flex-col h-[calc(100vh-73px)] bg-[#09090b] text-zinc-100 font-sans overflow-hidden">
@@ -354,46 +352,46 @@ export default function FragmentEditor({
       <div className="flex-1 flex overflow-hidden">
         
         {/* LEFT PANEL: Creation Tools */}
-        <div className="w-[420px] border-r border-white/10 flex flex-col bg-black/40 backdrop-blur-sm">
+        <div className="w-[500px] min-w-[500px] border-r border-white/10 flex flex-col bg-black/40 backdrop-blur-sm">
           {/* Scrollable Content Area */}
           <div className="flex-1 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
             {/* Mode Switcher */}
-            <div className="p-4 pb-0">
-               <div className="bg-zinc-900/80 p-1 rounded-lg flex mb-6 border border-white/5">
-                    <button 
-                    onClick={() => setCreationMode("image")}
-                    className={cn(
-                      "flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-all",
-                      creationMode === "image" ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md" : "text-zinc-400 hover:text-white hover:bg-white/5"
-                    )}
-                  >
-                    <ImageIcon className="h-4 w-4" />
-                    在线融图
-                  </button>
+            <div className="p-5 pb-0">
+               <div className="bg-zinc-900/80 p-1.5 rounded-xl flex mb-6 border border-white/5">
                   <button 
                     onClick={() => setCreationMode("video")}
                     className={cn(
-                      "flex-1 py-2 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-all",
+                      "flex-1 py-2.5 text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-all",
                       creationMode === "video" ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md" : "text-zinc-400 hover:text-white hover:bg-white/5"
                     )}
                   >
                     <Video className="h-4 w-4" />
                     视频生成
                   </button>
+                  <button 
+                    onClick={() => setCreationMode("image")}
+                    className={cn(
+                      "flex-1 py-2.5 text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-all",
+                      creationMode === "image" ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                    )}
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    在线融图
+                  </button>
                </div>
             </div>
 
-            <div className="px-6 space-y-8 pb-20">
+            <div className="px-5 space-y-6 pb-24">
              {/* Dynamic Content based on Mode */}
              
              {creationMode === "video" && (
-               <div className="space-y-6 animate-in slide-in-from-left-4 duration-300">
+               <div className="space-y-5 animate-in slide-in-from-left-4 duration-300">
                   {/* Video Sub-Modes */}
                   <Tabs value={videoMode} onValueChange={(v: any) => setVideoMode(v)} className="w-full">
-                    <TabsList className="w-full bg-zinc-900 border border-white/10 h-10 p-0.5">
-                      <TabsTrigger value="img2vid" className="flex-1 text-xs data-[state=active]:bg-zinc-700">图生视频</TabsTrigger>
-                      <TabsTrigger value="frame2frame" className="flex-1 text-xs data-[state=active]:bg-zinc-700">首尾帧</TabsTrigger>
-                      <TabsTrigger value="fusion" className="flex-1 text-xs data-[state=active]:bg-zinc-700">融合生视频</TabsTrigger>
+                    <TabsList className="w-full bg-zinc-900 border border-white/10 h-11 p-1 rounded-xl">
+                      <TabsTrigger value="img2vid" className="flex-1 text-xs data-[state=active]:bg-zinc-700 rounded-lg">图生视频</TabsTrigger>
+                      <TabsTrigger value="frame2frame" className="flex-1 text-xs data-[state=active]:bg-zinc-700 rounded-lg">首尾帧</TabsTrigger>
+                      <TabsTrigger value="fusion" className="flex-1 text-xs data-[state=active]:bg-zinc-700 rounded-lg">融合生视频</TabsTrigger>
                     </TabsList>
                   </Tabs>
 
@@ -401,18 +399,19 @@ export default function FragmentEditor({
                   <div className="space-y-4">
                     {/* Img2Vid Input */}
                     {videoMode === "img2vid" && (
-                      <div className="space-y-2">
-                         <Label className="text-xs text-zinc-400">参考图片</Label>
+                      <div className="space-y-3">
+                         <Label className="text-xs text-zinc-400 font-medium">参考图片</Label>
                          <div 
-                           className="aspect-video bg-zinc-900 border border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 hover:bg-purple-500/5 transition-all group relative overflow-hidden"
+                           className="aspect-[16/10] bg-zinc-900/80 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 hover:bg-purple-500/5 transition-all group relative overflow-hidden"
                            onClick={() => openUpload("refImage")}
                          >
                             {refImage ? (
-                              <img src={refImage} className="w-full h-full object-cover" />
+                              <img src={refImage} className="w-full h-full object-contain bg-black/50" />
                             ) : (
                               <>
-                                <Upload className="h-8 w-8 text-zinc-600 group-hover:text-purple-400 transition-colors mb-2" />
-                                <span className="text-xs text-zinc-500">点击上传本地参考图</span>
+                                <Upload className="h-10 w-10 text-zinc-600 group-hover:text-purple-400 transition-colors mb-3" />
+                                <span className="text-sm text-zinc-500">点击选择或上传参考图</span>
+                                <span className="text-xs text-zinc-600 mt-1">支持从素材库选择</span>
                               </>
                             )}
                          </div>
@@ -421,24 +420,27 @@ export default function FragmentEditor({
 
                     {/* Frame2Frame Inputs */}
                     {videoMode === "frame2frame" && (
-                       <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label className="text-xs text-zinc-400">首帧</Label>
-                            <div 
-                               className="aspect-square bg-zinc-900 border border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                               onClick={() => openUpload("refImage")}
-                             >
-                                {refImage ? <img src={refImage} className="w-full h-full object-cover" /> : <Plus className="h-6 w-6 text-zinc-600" />}
-                             </div>
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs text-zinc-400">尾帧</Label>
-                            <div 
-                               className="aspect-square bg-zinc-900 border border-dashed border-white/20 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                               onClick={() => openUpload("endImage")}
-                             >
-                                {endImage ? <img src={endImage} className="w-full h-full object-cover" /> : <Plus className="h-6 w-6 text-zinc-600" />}
-                             </div>
+                       <div className="space-y-3">
+                          <Label className="text-xs text-zinc-400 font-medium">首尾帧图片</Label>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <span className="text-[11px] text-zinc-500">首帧</span>
+                              <div 
+                                 className="aspect-square bg-zinc-900/80 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                                 onClick={() => openUpload("refImage")}
+                               >
+                                  {refImage ? <img src={refImage} className="w-full h-full object-contain bg-black/50" /> : <Plus className="h-8 w-8 text-zinc-600" />}
+                               </div>
+                            </div>
+                            <div className="space-y-2">
+                              <span className="text-[11px] text-zinc-500">尾帧</span>
+                              <div 
+                                 className="aspect-square bg-zinc-900/80 border-2 border-dashed border-white/20 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                                 onClick={() => openUpload("endImage")}
+                               >
+                                  {endImage ? <img src={endImage} className="w-full h-full object-contain bg-black/50" /> : <Plus className="h-8 w-8 text-zinc-600" />}
+                               </div>
+                            </div>
                           </div>
                        </div>
                     )}
@@ -446,112 +448,165 @@ export default function FragmentEditor({
                     {/* Fusion Inputs */}
                     {videoMode === "fusion" && (
                       <div className="space-y-3">
-                        <Label className="text-xs text-zinc-400">融合素材</Label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <Label className="text-xs text-zinc-400 font-medium">融合素材</Label>
+                        <div className="grid grid-cols-3 gap-3">
                            {/* Character */}
                            <div 
-                             className="aspect-[3/4] bg-zinc-900 rounded border border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                             onClick={() => openPicker("char")}
+                             className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                             onClick={() => openUpload("char")}
                            >
                               {selectedChar ? (
                                 <>
-                                  <img src={selectedChar.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                  <span className="relative z-10 text-[10px] font-bold bg-black/50 px-1 rounded">{selectedChar.name}</span>
+                                  <img src={selectedChar.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                                  <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedChar.name}</span>
                                 </>
                               ) : (
-                                <div className="flex flex-col items-center gap-1">
-                                   <User className="h-4 w-4 text-zinc-600" />
-                                   <span className="text-[9px] text-zinc-600">角色</span>
+                                <div className="flex flex-col items-center gap-2">
+                                   <User className="h-6 w-6 text-zinc-600" />
+                                   <span className="text-[10px] text-zinc-500">角色</span>
                                 </div>
                               )}
                            </div>
                            
                            {/* Scene */}
                            <div 
-                             className="aspect-[3/4] bg-zinc-900 rounded border border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                             onClick={() => openPicker("scene")}
+                             className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                             onClick={() => openUpload("scene")}
                            >
                               {selectedScene ? (
                                 <>
-                                  <img src={selectedScene.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                  <span className="relative z-10 text-[10px] font-bold bg-black/50 px-1 rounded">{selectedScene.name}</span>
+                                  <img src={selectedScene.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                                  <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedScene.name}</span>
                                 </>
                               ) : (
-                                <div className="flex flex-col items-center gap-1">
-                                   <MapPin className="h-4 w-4 text-zinc-600" />
-                                   <span className="text-[9px] text-zinc-600">场景</span>
+                                <div className="flex flex-col items-center gap-2">
+                                   <MapPin className="h-6 w-6 text-zinc-600" />
+                                   <span className="text-[10px] text-zinc-500">场景</span>
                                 </div>
                               )}
                            </div>
 
                            {/* Prop */}
                            <div 
-                             className="aspect-[3/4] bg-zinc-900 rounded border border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                             onClick={() => openPicker("prop")}
+                             className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                             onClick={() => openUpload("prop")}
                            >
                               {selectedProp ? (
                                 <>
-                                  <img src={selectedProp.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                  <span className="relative z-10 text-[10px] font-bold bg-black/50 px-1 rounded">{selectedProp.name}</span>
+                                  <img src={selectedProp.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                                  <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedProp.name}</span>
                                 </>
                               ) : (
-                                <div className="flex flex-col items-center gap-1">
-                                   <Box className="h-4 w-4 text-zinc-600" />
-                                   <span className="text-[9px] text-zinc-600">物品</span>
+                                <div className="flex flex-col items-center gap-2">
+                                   <Box className="h-6 w-6 text-zinc-600" />
+                                   <span className="text-[10px] text-zinc-500">物品</span>
                                 </div>
                               )}
                            </div>
                         </div>
-
-                        {/* Pose & Effect Row */}
-                        <div className="grid grid-cols-2 gap-2">
-                          {/* Pose */}
-                          <div 
-                            className="aspect-[3/4] bg-zinc-900 rounded border border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                            onClick={() => openUpload("pose")}
-                          >
-                            {poseImage ? (
-                              <>
-                                <img src={poseImage} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                <span className="relative z-10 text-[10px] font-bold bg-black/50 px-1 rounded">姿态</span>
-                              </>
-                            ) : (
-                              <div className="flex flex-col items-center gap-1">
-                                <Layers className="h-4 w-4 text-zinc-600" />
-                                <span className="text-[9px] text-zinc-600">姿态（点击上传）</span>
-                              </div>
-                            )}
-                          </div>
-                          {/* Effect */}
-                          <div 
-                            className="aspect-[3/4] bg-zinc-900 rounded border border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden"
-                            onClick={() => openUpload("effect")}
-                          >
-                            {selectedEffect ? (
-                              <>
-                                <img src={selectedEffect.imageUrl} className="absolute inset-0 w-full h-full object-cover opacity-50" />
-                                <span className="relative z-10 text-[10px] font-bold bg-black/50 px-1 rounded">{selectedEffect.name}</span>
-                              </>
-                            ) : (
-                              <div className="flex flex-col items-center gap-1">
-                                <Sparkles className="h-4 w-4 text-zinc-600" />
-                                <span className="text-[9px] text-zinc-600">特效（点击上传）</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Upload shortcuts */}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Button variant="outline" size="sm" className="border-white/10" onClick={() => openUpload("char")}>上传角色</Button>
-                          <Button variant="outline" size="sm" className="border-white/10" onClick={() => openUpload("scene")}>上传场景</Button>
-                          <Button variant="outline" size="sm" className="border-white/10" onClick={() => openUpload("prop")}>上传物品</Button>
-                          <Button variant="outline" size="sm" className="border-white/10" onClick={() => openUpload("pose")}>上传姿态</Button>
-                          <Button variant="outline" size="sm" className="border-white/10" onClick={() => openUpload("effect")}>上传特效</Button>
-                        </div>
                       </div>
                     )}
                   </div>
+               </div>
+             )}
+
+             {/* Image Mode - 在线融图 */}
+             {creationMode === "image" && (
+               <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
+                 <Label className="text-xs text-zinc-400 font-medium">融合素材（点击选择）</Label>
+                 <div className="grid grid-cols-3 gap-3">
+                   {/* Character */}
+                   <div 
+                     className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                     onClick={() => openUpload("char")}
+                   >
+                     {selectedChar ? (
+                       <>
+                         <img src={selectedChar.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                         <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedChar.name}</span>
+                       </>
+                     ) : (
+                       <div className="flex flex-col items-center gap-2">
+                         <User className="h-6 w-6 text-zinc-600" />
+                         <span className="text-[10px] text-zinc-500">角色</span>
+                       </div>
+                     )}
+                   </div>
+                   
+                   {/* Scene */}
+                   <div 
+                     className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                     onClick={() => openUpload("scene")}
+                   >
+                     {selectedScene ? (
+                       <>
+                         <img src={selectedScene.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                         <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedScene.name}</span>
+                       </>
+                     ) : (
+                       <div className="flex flex-col items-center gap-2">
+                         <MapPin className="h-6 w-6 text-zinc-600" />
+                         <span className="text-[10px] text-zinc-500">场景</span>
+                       </div>
+                     )}
+                   </div>
+
+                   {/* Prop */}
+                   <div 
+                     className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                     onClick={() => openUpload("prop")}
+                   >
+                     {selectedProp ? (
+                       <>
+                         <img src={selectedProp.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                         <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedProp.name}</span>
+                       </>
+                     ) : (
+                       <div className="flex flex-col items-center gap-2">
+                         <Box className="h-6 w-6 text-zinc-600" />
+                         <span className="text-[10px] text-zinc-500">物品</span>
+                       </div>
+                     )}
+                   </div>
+                 </div>
+
+                 {/* Pose & Effect Row */}
+                 <div className="grid grid-cols-2 gap-3">
+                   {/* Pose */}
+                   <div 
+                     className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                     onClick={() => openUpload("pose")}
+                   >
+                     {poseImage ? (
+                       <>
+                         <img src={poseImage} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                         <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">姿态</span>
+                       </>
+                     ) : (
+                       <div className="flex flex-col items-center gap-2">
+                         <Layers className="h-6 w-6 text-zinc-600" />
+                         <span className="text-[10px] text-zinc-500">姿态</span>
+                       </div>
+                     )}
+                   </div>
+                   {/* Effect */}
+                   <div 
+                     className="aspect-[3/4] bg-zinc-900/80 rounded-xl border-2 border-white/10 flex flex-col items-center justify-center cursor-pointer hover:border-purple-500 relative overflow-hidden transition-all"
+                     onClick={() => openUpload("effect")}
+                   >
+                     {selectedEffect ? (
+                       <>
+                         <img src={selectedEffect.imageUrl} className="absolute inset-0 w-full h-full object-contain bg-black/50" />
+                         <span className="relative z-10 text-[10px] font-bold bg-black/60 px-2 py-0.5 rounded">{selectedEffect.name}</span>
+                       </>
+                     ) : (
+                       <div className="flex flex-col items-center gap-2">
+                         <Sparkles className="h-6 w-6 text-zinc-600" />
+                         <span className="text-[10px] text-zinc-500">特效</span>
+                       </div>
+                     )}
+                   </div>
+                 </div>
                </div>
              )}
 
@@ -595,15 +650,28 @@ export default function FragmentEditor({
                 `}</style>
                 <div className="flex justify-between items-center">
                    <Label className="text-xs text-zinc-400">描述</Label>
-                   <Button 
-                     variant="ghost" 
-                     size="sm" 
-                     className="h-6 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 px-2"
-                     onClick={() => setPrompt(`景别:\n视角:\n构图:\n时间:\n氛围:\n主体:`)}
-                   >
-                     <Wand2 className="h-3 w-3 mr-1" />
-                     一键填入提示词框架
-                   </Button>
+                   <div className="flex gap-2">
+                     {creationMode === 'video' && (
+                       <Button 
+                         variant="ghost" 
+                         size="sm" 
+                         className="h-6 text-[10px] text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 px-2"
+                         onClick={() => setScriptDialogOpen(true)}
+                       >
+                         <BookOpen className="h-3 w-3 mr-1" />
+                         剧本
+                       </Button>
+                     )}
+                     <Button 
+                       variant="ghost" 
+                       size="sm" 
+                       className="h-6 text-[10px] text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 px-2"
+                       onClick={() => setPrompt(`景别:\n视角:\n构图:\n时间:\n氛围:\n主体:`)}
+                     >
+                       <Wand2 className="h-3 w-3 mr-1" />
+                       框架
+                     </Button>
+                   </div>
                 </div>
                 <Textarea 
                   value={prompt}
@@ -616,23 +684,25 @@ export default function FragmentEditor({
              {/* Common Parameters */}
              <div className="space-y-4 pt-4 border-t border-white/5">
                 <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-2">
-                      <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">时长</Label>
-                      <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-md p-1">
-                         {[3, 5, 8, 10].map(s => (
-                           <button 
-                             key={s}
-                             onClick={() => setDuration(s)}
-                             className={cn(
-                               "flex-1 text-xs py-1 rounded transition-colors",
-                               duration === s ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
-                             )}
-                           >
-                             {s}s
-                           </button>
-                         ))}
-                      </div>
-                   </div>
+                   {creationMode === 'video' && (
+                     <div className="space-y-2">
+                        <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">时长</Label>
+                        <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-md p-1">
+                           {[3, 5, 8, 10].map(s => (
+                             <button 
+                               key={s}
+                               onClick={() => setDuration(s)}
+                               className={cn(
+                                 "flex-1 text-xs py-1 rounded transition-colors",
+                                 duration === s ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
+                               )}
+                             >
+                               {s}s
+                             </button>
+                           ))}
+                        </div>
+                     </div>
+                   )}
                    <div className="space-y-2">
                       <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">比例</Label>
                       <select 
@@ -699,25 +769,27 @@ export default function FragmentEditor({
           </div>
           
           {/* Fixed Generate Button Area */}
-          <div className="border-t border-white/10 bg-black/60 backdrop-blur-sm p-6 shrink-0">
+          <div className="border-t border-white/10 bg-black/80 backdrop-blur-sm p-5 shrink-0">
             <Button 
               onClick={handleGenerate}
               disabled={generating}
-              className="w-full bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 h-12 text-sm font-bold tracking-wide shadow-lg shadow-purple-900/40 border border-white/10"
+              className="w-full bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 h-14 text-base font-bold tracking-wide shadow-lg shadow-purple-900/40 border border-white/10 rounded-xl"
             >
               {generating ? (
                 <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
                   生成任务处理中...
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-4 w-4 mr-2 fill-white" />
+                  <Sparkles className="h-5 w-5 mr-2 fill-white" />
                   {creationMode === 'video' ? '开始生成视频' : '开始生成图片'}
                 </>
               )}
             </Button>
-            <p className="text-[10px] text-center text-zinc-600 mt-2">消耗: {duration * 2} 积分 / 次</p>
+            {creationMode === 'video' && (
+              <p className="text-xs text-center text-zinc-500 mt-3">消耗: {duration * 2} 积分 / 次</p>
+            )}
           </div>
         </div>
 
@@ -836,6 +908,27 @@ export default function FragmentEditor({
         assetType={uploadTarget === "char" ? "characters" : uploadTarget === "scene" ? "scenes" : uploadTarget === "prop" ? "props" : uploadTarget === "effect" ? "effects" : uploadTarget}
         onSelect={handleAssetSelectorSelect}
         title={`选择或上传${uploadTarget === "char" ? "角色" : uploadTarget === "scene" ? "场景" : uploadTarget === "prop" ? "物品" : uploadTarget === "effect" ? "特效" : uploadTarget === "pose" ? "姿态" : uploadTarget === "refImage" ? "参考图" : "尾帧"}素材`}
+      />
+      
+      {/* 剧本选择对话框 */}
+      <ScriptSelectorDialog
+        open={scriptDialogOpen}
+        onOpenChange={setScriptDialogOpen}
+        onSelectShot={handleScriptShotSelect}
+        onSelectCharacter={(char) => {
+          if (char.imageUrl) {
+            setRefImage(char.imageUrl);
+            setSelectedChar(char);
+            toast(`已加载人物「${char.name}」到参考图`, "success");
+          }
+        }}
+        onSelectScene={(scene) => {
+          if (scene.imageUrl) {
+            setRefImage(scene.imageUrl);
+            setSelectedScene(scene);
+            toast(`已加载场景「${scene.name}」到参考图`, "success");
+          }
+        }}
       />
     </div>
   );

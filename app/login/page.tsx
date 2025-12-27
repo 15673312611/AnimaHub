@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +11,20 @@ import api from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [returnUrl, setReturnUrl] = useState<string>("/dashboard");
+
+  useEffect(() => {
+    // 获取 returnUrl 参数
+    const url = searchParams.get("returnUrl");
+    if (url) {
+      setReturnUrl(url);
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +34,8 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", { username, password });
       localStorage.setItem("token", res.data.token);
-      router.push("/dashboard");
+      // 登录成功后跳转到原来的页面或默认的 dashboard
+      router.push(returnUrl);
     } catch (err: any) {
       setError(err.response?.data?.error || "登录失败，请检查您的邮箱和密码");
     } finally {

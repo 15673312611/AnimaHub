@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AssetGallery } from "./AssetGallery";
 import { MapPin, Sparkles, Upload, Loader2, Wand2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +14,7 @@ import api from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 import { safeAsync } from "@/lib/error-handler";
 import ImageUploader from "./ImageUploader";
+import { wsService } from "@/lib/websocket";
 
 interface ScenesTabProps {
   projectId: number;
@@ -26,24 +27,63 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
   const [showDialog, setShowDialog] = useState(false);
   const [mode, setMode] = useState<"generate" | "upload">("generate");
   const [creating, setCreating] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
   
   const [formData, setFormData] = useState({
     name: "",
-    sceneType: "",
-    description: "",
     prompt: "",
-    model: "flux-pro",
+    model: "nano-banana-2-4k",
     referenceImage: "",
     imageUrl: ""
   });
 
+  // WebSocket 订阅
+  useEffect(() => {
+    wsService.connect();
+    wsService.subscribeToAssets(handleAssetUpdate);
+    
+    return () => {
+      wsService.unsubscribeFromAssets();
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
+  
+  const handleAssetUpdate = (message: any) => {
+    if (message.type === 'ASSET_STATUS_UPDATE' && message.assetType === 'scene') {
+      console.log('📥 收到场景状态更新:', message);
+      if (message.status === 'COMPLETED' || message.status === 'FAILED') {
+        onUpdate();
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+      }
+    }
+  };
+  
+  const startPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    pollingRef.current = setInterval(() => {
+      onUpdate();
+    }, 5000);
+    
+    setTimeout(() => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }, 30000);
+  };
+
   const resetForm = () => {
     setFormData({
       name: "",
-      sceneType: "",
-      description: "",
       prompt: "",
-      model: "flux-pro",
+      model: "nano-banana-2-4k",
       referenceImage: "",
       imageUrl: ""
     });
@@ -76,11 +116,14 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
       },
       toast,
       {
-        successMessage: mode === "generate" ? "🎨 AI生成任务已启动" : "✅ 场景上传成功",
+        successMessage: mode === "generate" ? "🎨 AI生成任务已提交，请稍候..." : "✅ 场景上传成功",
         onSuccess: () => {
           setShowDialog(false);
           resetForm();
           onUpdate();
+          if (mode === "generate") {
+            startPolling();
+          }
         }
       }
     );
@@ -150,24 +193,13 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
                             value={formData.prompt}
                             onChange={(e) => setFormData({...formData, prompt: e.target.value})}
                             placeholder="详细描述场景细节，例如: 阳光透过窗户洒在教室课桌上，窗外是樱花树，高质量，动漫风格..."
-                            className="bg-zinc-900/30 border-white/10 min-h-[240px] text-base resize-none rounded-xl focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20"
-                          />
-                       </div>
-
-                       <div>
-                          <Label className="text-sm text-zinc-400 mb-2 block">场景氛围 / 设定</Label>
-                          <Textarea 
-                            value={formData.description}
-                            onChange={(e) => setFormData({...formData, description: e.target.value})}
-                            placeholder="简要描述场景的氛围、时间、天气..."
-                            className="bg-zinc-900/30 border-white/10 min-h-[120px] rounded-xl focus:border-purple-500/50"
+                            className="bg-zinc-900/30 border-white/10 min-h-[300px] text-base resize-none rounded-xl focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20"
                           />
                        </div>
                     </div>
 
                     {/* Right: Settings */}
                     <div className="md:col-span-5 space-y-6 pt-1">
-                       {/* No container box */}
                           <div>
                             <Label className="text-sm text-zinc-400 mb-2 block">场景名称 *</Label>
                             <Input 
@@ -179,32 +211,17 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
                           </div>
 
                           <div>
-                            <Label className="text-sm text-zinc-400 mb-2 block">场景类型</Label>
-                            <Select value={formData.sceneType} onValueChange={(v) => setFormData({...formData, sceneType: v})}>
-                              <SelectTrigger className="bg-zinc-900/30 border-white/10 h-11 rounded-xl">
-                                <SelectValue placeholder="选择类型" />
-                              </SelectTrigger>
-                              <SelectContent className="bg-zinc-900 border-white/10">
-                                <SelectItem value="室内">室内</SelectItem>
-                                <SelectItem value="室外">室外</SelectItem>
-                                <SelectItem value="自然">自然</SelectItem>
-                                <SelectItem value="城市">城市</SelectItem>
-                                <SelectItem value="科幻">科幻</SelectItem>
-                                <SelectItem value="奇幻">奇幻</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="pt-2">
                             <Label className="text-sm text-zinc-400 mb-2 block">生成模型</Label>
                             <Select value={formData.model} onValueChange={(v) => setFormData({...formData, model: v})}>
                               <SelectTrigger className="bg-zinc-900/30 border-white/10 h-11 rounded-xl">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent className="bg-zinc-900 border-white/10">
-                                <SelectItem value="nano-banana-2-2k">Nano Banana 2K</SelectItem>
-                                <SelectItem value="nano-banana-2-4k">Nano Banana 4K</SelectItem>
-                                <SelectItem value="mj_relax_imagine">Midjourney (Relax)</SelectItem>
+                                <SelectItem value="nano-banana-2-4k">Nano Banana 2 (4K)</SelectItem>
+                                <SelectItem value="sora_image-vip">Sora Image VIP</SelectItem>
+                                <SelectItem value="doubao-seedream-4-5-251128">豆包 SeeDream 4.5</SelectItem>
+                                <SelectItem value="z-image-turbo">Z-Image Turbo</SelectItem>
+                                <SelectItem value="qwen-image-edit-2509">通义千问图像编辑</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -239,33 +256,63 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
                     </div>
                  </div>
                ) : (
-                 <div className="max-w-xl mx-auto space-y-6 py-8">
-                    <div className="space-y-4">
-                      <Label className="text-lg">场景名称</Label>
-                      <Input 
-                          value={formData.name}
-                          onChange={(e) => setFormData({...formData, name: e.target.value})}
-                          placeholder="例如: 教室"
-                          className="bg-black/20 border-white/10 h-12 text-lg rounded-xl"
-                        />
-                    </div>
-                    <div className="space-y-4">
-                      <Label className="text-lg">上传图片</Label>
-                      <ImageUploader 
-                        onUpload={(url) => setFormData({...formData, imageUrl: url})}
-                        label="拖拽或点击上传场景图片"
-                        description="支持 JPG、PNG、GIF 等格式，最大 10MB"
-                        className="h-[300px] border-2 border-dashed border-white/10 hover:border-purple-500/50 transition-colors bg-zinc-900/30 rounded-xl"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>描述</Label>
-                      <Textarea 
-                        value={formData.description}
-                        onChange={(e) => setFormData({...formData, description: e.target.value})}
-                        placeholder="备注信息..."
-                        className="bg-zinc-900/30 border-white/10"
-                      />
+                 <div className="max-w-2xl mx-auto py-6">
+                    <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-900/40 rounded-2xl border border-white/5 p-8 space-y-8">
+                      {/* 名称输入 */}
+                      <div className="space-y-3">
+                        <Label className="text-base font-medium text-white flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                          场景名称
+                        </Label>
+                        <Input 
+                            value={formData.name}
+                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                            placeholder="例如: 教室、街道、森林..."
+                            className="bg-black/30 border-white/10 h-12 text-base rounded-xl focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 placeholder:text-zinc-600"
+                          />
+                      </div>
+                      
+                      {/* 图片上传区域 */}
+                      <div className="space-y-3">
+                        <Label className="text-base font-medium text-white flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                          上传图片
+                        </Label>
+                        
+                        {formData.imageUrl ? (
+                          <div className="relative group rounded-2xl overflow-hidden border border-white/10 bg-black/20">
+                            <div className="aspect-video">
+                              <img 
+                                src={formData.imageUrl} 
+                                alt="Preview" 
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col items-center justify-center gap-3">
+                              <p className="text-white text-sm font-medium">点击更换图片</p>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => setFormData({...formData, imageUrl: ""})}
+                                className="bg-red-500/20 hover:bg-red-500/40 text-red-400 border-red-500/50 rounded-full px-4"
+                              >
+                                移除图片
+                              </Button>
+                            </div>
+                            <div 
+                              className="absolute inset-0 cursor-pointer"
+                              onClick={() => document.getElementById('scene-upload-input')?.click()}
+                            />
+                          </div>
+                        ) : (
+                          <ImageUploader 
+                            onUpload={(url) => setFormData({...formData, imageUrl: url})}
+                            label=""
+                            description="支持 JPG、PNG、GIF 等格式，最大 10MB"
+                            className="h-[280px]"
+                          />
+                        )}
+                      </div>
                     </div>
                  </div>
                )}

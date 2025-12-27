@@ -19,9 +19,13 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 || error.response?.status === 403) {
-      // 如果是认证错误，清除 token
+      // 如果是认证错误，清除 token 并跳转到登录页
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
+        // 跳转到登录页面,并保存当前路径用于登录后返回
+        const currentPath = window.location.pathname;
+        const returnUrl = currentPath !== '/login' ? `?returnUrl=${encodeURIComponent(currentPath)}` : '';
+        window.location.href = `/login${returnUrl}`;
       }
     }
     return Promise.reject(error);

@@ -11,7 +11,6 @@ interface Project {
   id: number;
   title: string;
   description: string;
-  status: string;
   assetCharacters: any[];
   assetScenes: any[];
   assetProps: any[];

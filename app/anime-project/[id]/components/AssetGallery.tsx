@@ -16,9 +16,10 @@ interface Asset {
   id: number;
   name: string;
   imageUrl?: string;
-  status: string; // DRAFT, GENERATING, COMPLETED, FAILED
+  status: string; // PENDING, GENERATING, COMPLETED, FAILED
   progress?: number;
   description?: string;
+  generationPrompt?: string;
   [key: string]: any;
 }
 
@@ -156,8 +157,8 @@ export function AssetGallery({
                     <h3 className="font-semibold text-zinc-100 truncate text-sm" title={asset.name}>
                       {asset.name}
                     </h3>
-                    <p className="text-xs text-zinc-500 mt-1 line-clamp-1">
-                      {asset.description || "暂无描述"}
+                    <p className="text-xs text-zinc-500 mt-1 line-clamp-2" title={asset.generationPrompt || asset.description || ""}>
+                      {asset.generationPrompt || asset.description || "暂无描述"}
                     </p>
                   </div>
                 </div>

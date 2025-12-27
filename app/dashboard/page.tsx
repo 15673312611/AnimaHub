@@ -23,7 +23,6 @@ interface Project {
   id: number;
   title: string;
   description: string;
-  status: string;
   updatedAt: string;
 }
 
@@ -142,7 +141,7 @@ export default function DashboardPage() {
                 </div>
             )}
             <AnimatePresence>
-            {projects.map((project) => (
+            {projects.map((project, index) => (
               <motion.div
                 key={project.id}
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -152,7 +151,30 @@ export default function DashboardPage() {
                 className="group relative"
               >
                 <Link href={`/anime-project/${project.id}`}>
-                  <div className="relative flex flex-col h-full p-4 rounded-2xl bg-zinc-900/40 border border-white/5 overflow-hidden transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-2xl group-hover:shadow-purple-900/20 group-hover:border-purple-500/30">
+                  {/* 动态渐变边框容器 */}
+                  <div className="relative rounded-2xl p-[2px] overflow-hidden transition-all duration-300 group-hover:-translate-y-2 group-hover:shadow-2xl group-hover:shadow-purple-500/40">
+                    {/* 动态渐变边框 - 流动动画 */}
+                    <div 
+                      className="absolute inset-0 rounded-2xl opacity-50 group-hover:opacity-100 transition-opacity duration-300"
+                      style={{
+                        background: `linear-gradient(90deg, #a855f7, #06b6d4, #ec4899, #f59e0b, #22c55e, #a855f7, #06b6d4)`,
+                        backgroundSize: '200% 100%',
+                        animation: 'border-flow 3s linear infinite',
+                      }}
+                    />
+                    {/* 边框发光效果 */}
+                    <div 
+                      className="absolute inset-[-3px] rounded-2xl opacity-0 group-hover:opacity-40 blur-sm transition-opacity duration-300"
+                      style={{
+                        background: `linear-gradient(90deg, #a855f7, #06b6d4, #ec4899, #f59e0b, #22c55e, #a855f7, #06b6d4)`,
+                        backgroundSize: '200% 100%',
+                        animation: 'border-flow 3s linear infinite',
+                      }}
+                    />
+                    {/* 内层背景 */}
+                    <div className="absolute inset-[2px] rounded-[14px] bg-zinc-900" />
+                    
+                  <div className="relative flex flex-col h-full p-4 rounded-[14px] bg-zinc-900/95 overflow-hidden">
                     
                     {/* Background Glow Effect */}
                     <div className="absolute inset-0 bg-gradient-to-br from-purple-500/0 via-transparent to-blue-500/0 opacity-0 group-hover:opacity-10 transition-opacity duration-500" />
@@ -204,6 +226,7 @@ export default function DashboardPage() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
+                  </div>
                   </div>
                 </Link>
               </motion.div>

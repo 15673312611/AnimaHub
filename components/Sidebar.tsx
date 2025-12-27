@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useTransition, useCallback, memo } from "react";
 import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, 
@@ -9,34 +10,68 @@ import {
   Settings, 
   Film, 
   LogOut, 
-  Palette, 
-  Video, 
-  Users,
-  Lightbulb,
   BookOpen,
   Coins,
   Image as ImageIcon,
-  Clapperboard,
-  Library
+  Library,
+  LucideIcon
 } from "lucide-react";
 
 const navItems = [
   { name: "工作台", href: "/dashboard", icon: LayoutDashboard },
-  { name: "素材库", href: "/assets", icon: Library },
+  { name: "剧本", href: "/scripts", icon: BookOpen },
+  { name: "公共素材库", href: "/assets", icon: Library },
   { name: "AI 生图", href: "/ai-image", icon: ImageIcon },
-  { name: "AI 视频生成", href: "/sora-video", icon: Clapperboard },
-  { name: "漫画工作流", href: "/comic-workflow", icon: BookOpen },
   { name: "设置", href: "/settings", icon: Settings },
 ];
+
+// 将导航项抽离为独立的 memo 组件，避免不必要的重渲染
+const NavItem = memo(function NavItem({ 
+  item, 
+  isActive, 
+  isPending,
+  onClick 
+}: { 
+  item: { name: string; href: string; icon: LucideIcon };
+  isActive: boolean;
+  isPending: boolean;
+  onClick: (href: string) => void;
+}) {
+  const Icon = item.icon;
+  
+  return (
+    <button
+      onClick={() => onClick(item.href)}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+        isActive
+          ? "bg-white/10 text-white"
+          : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100",
+        isPending && "opacity-70"
+      )}
+    >
+      <Icon className={cn("w-4 h-4", isActive ? "text-purple-400" : "text-zinc-500")} />
+      <span>{item.name}</span>
+    </button>
+  );
+});
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
 
-  const handleLogout = () => {
+  // 使用 startTransition 包裹导航，让 UI 保持响应
+  const handleNavigation = useCallback((href: string) => {
+    startTransition(() => {
+      router.push(href);
+    });
+  }, [router]);
+
+  const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     router.push('/login');
-  };
+  }, [router]);
 
   return (
     <div className="w-64 bg-zinc-950 border-r border-white/5 h-screen flex flex-col">
@@ -52,7 +87,7 @@ export function Sidebar() {
 
       {/* Primary Action */}
       <div className="px-4 py-4">
-        <Link href="/create-simple">
+        <Link href="/create-simple" prefetch={true}>
           <button className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20">
             <Plus className="w-4 h-4" />
             <span>新建项目</span>
@@ -65,19 +100,13 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
-            <Link
+            <NavItem
               key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-white/10 text-white"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
-              )}
-            >
-              <item.icon className={cn("w-4 h-4", isActive ? "text-purple-400" : "text-zinc-500 group-hover:text-zinc-300")} />
-              <span>{item.name}</span>
-            </Link>
+              item={item}
+              isActive={isActive}
+              isPending={isPending}
+              onClick={handleNavigation}
+            />
           );
         })}
       </nav>

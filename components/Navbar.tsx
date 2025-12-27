@@ -3,142 +3,46 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Film, LogOut, User, Palette, Sparkles, Image as ImageIcon, Loader2, Play, BookOpen } from "lucide-react";
+import { Film, LogOut, User, Loader2, Coins } from "lucide-react";
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
+
+interface UserProfile {
+  id: number;
+  username: string;
+  email: string;
+  credits: number;
+}
 
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
-  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
-  const [ideaInput, setIdeaInput] = useState("");
-  const [generatedPrompt, setGeneratedPrompt] = useState("");
-  const [generatingPrompt, setGeneratingPrompt] = useState(false);
-  const [generatingVideo, setGeneratingVideo] = useState(false);
-  const [quickTaskId, setQuickTaskId] = useState<string | null>(null);
-  const [quickStatus, setQuickStatus] = useState<string | null>(null);
-  const [quickVideoUrl, setQuickVideoUrl] = useState<string | null>(null);
-  const [dialogModel, setDialogModel] = useState<string | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if logged in
     const token = localStorage.getItem('token');
     if (token) {
-      // Optionally decode token or fetch user info
-      setUser({ username: "用户" });
-    }
-    try {
-      const raw = localStorage.getItem('sora_settings');
-      if (raw) {
-        const stored = JSON.parse(raw);
-        if (stored.selectedDialogModel) {
-          setDialogModel(stored.selectedDialogModel);
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to load dialog model from settings', error);
+      fetchUserProfile();
+    } else {
+      setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!quickTaskId) return;
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const res = await api.get(`/videos/task/${quickTaskId}`);
-        if (cancelled) return;
-        const data: any = res.data;
-        setQuickStatus(data?.status || null);
-
-        if (data?.status === 'SUCCESS') {
-          const url =
-            (data.data && (data.data.output || data.data.url)) ||
-            data.output ||
-            data.url ||
-            null;
-          if (url) {
-            setQuickVideoUrl(url);
-          }
-          setGeneratingVideo(false);
-          setQuickTaskId(null);
-        } else if (data?.status === 'FAILED') {
-          setGeneratingVideo(false);
-          setQuickTaskId(null);
-        }
-      } catch (error) {
-        if (cancelled) return;
-        console.error('Failed to poll quick video status', error);
-        setGeneratingVideo(false);
-        setQuickTaskId(null);
-      }
-    };
-
-    poll();
-    const id = window.setInterval(poll, 5000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [quickTaskId]);
+  const fetchUserProfile = async () => {
+    try {
+      const response = await api.get("/user/profile");
+      setUser(response.data);
+    } catch (error) {
+      console.error("获取用户信息失败", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     router.push('/login');
-  };
-
-  const handleGenerateTemplatePrompt = async () => {
-    if (!ideaInput.trim() || generatingPrompt) return;
-    try {
-      setGeneratingPrompt(true);
-      const res = await api.post('/ideas/short-prompt', {
-        description: ideaInput.trim(),
-        model: dialogModel || undefined,
-      });
-      const prompt = (res.data && res.data.prompt) || "";
-      if (prompt) {
-        setGeneratedPrompt(prompt);
-      }
-    } catch (error) {
-      console.error('Failed to generate short video prompt', error);
-    } finally {
-      setGeneratingPrompt(false);
-    }
-  };
-
-  const handleStartQuickVideo = async () => {
-    if (!generatedPrompt.trim() || generatingVideo) return;
-    try {
-      setGeneratingVideo(true);
-      setQuickStatus(null);
-      setQuickVideoUrl(null);
-      const res = await api.post('/videos/generate', { prompt: generatedPrompt });
-      if (res.data?.taskId) {
-        setQuickTaskId(res.data.taskId);
-      } else {
-        setGeneratingVideo(false);
-      }
-    } catch (error) {
-      console.error('Failed to start quick video generation', error);
-      setGeneratingVideo(false);
-    }
-  };
-
-  const handlePromptDialogOpenChange = (open: boolean) => {
-    setPromptDialogOpen(open);
-    if (!open) {
-      setIdeaInput("");
-      setGeneratedPrompt("");
-      setGeneratingPrompt(false);
-      setGeneratingVideo(false);
-      setQuickTaskId(null);
-      setQuickStatus(null);
-      setQuickVideoUrl(null);
-    }
   };
 
   if (pathname === '/' || pathname === '/login' || pathname === '/register') {
@@ -158,12 +62,25 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          {user && (
+          {loading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+          ) : user ? (
             <>
+              {/* 用户信息 */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
-                <User className="w-4 h-4 text-gray-400" />
+                <User className="w-4 h-4 text-purple-400" />
                 <span className="text-sm text-gray-300">{user.username}</span>
               </div>
+              
+              {/* 积分显示 */}
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span className="text-sm font-medium bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
+                  {user.credits}
+                </span>
+                <span className="text-xs text-amber-400/60">积分</span>
+              </div>
+              
               <Button 
                 variant="ghost" 
                 size="sm" 
@@ -174,7 +91,7 @@ export default function Navbar() {
                 退出
               </Button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </nav>

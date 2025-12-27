@@ -40,7 +40,6 @@ interface Project {
   id: number;
   title: string;
   description: string;
-  status: string;
   assetCharacters: any[];
   assetScenes: any[];
   assetProps: any[];
@@ -113,7 +112,7 @@ export default function AnimeProjectPage() {
     if (!newSegmentName || !project) return;
     setCreatingSegment(true);
     try {
-      // Create a DRAFT video entry as a "Segment" container
+      // Create a PENDING video entry as a "Segment" container
       // Using the correct endpoint: /projects/:id/videos
       await api.post(`/projects/${project.id}/videos`, {
         projectId: project.id,
@@ -290,11 +289,31 @@ export default function AnimeProjectPage() {
           {/* Assets View */}
           <TabsContent value="assets" className="mt-0 h-full animate-in fade-in slide-in-from-bottom-2 duration-500">
             <Tabs defaultValue="characters" className="space-y-6">
-               <TabsList className="bg-zinc-900 border border-white/10 p-1">
-                  <TabsTrigger value="characters" className="px-6">角色</TabsTrigger>
-                  <TabsTrigger value="scenes" className="px-6">场景</TabsTrigger>
-                  <TabsTrigger value="props" className="px-6">物品</TabsTrigger>
-                  <TabsTrigger value="effects" className="px-6">特效</TabsTrigger>
+               <TabsList className="bg-zinc-900/50 border border-white/10 p-1.5 rounded-xl">
+                  <TabsTrigger 
+                    value="characters" 
+                    className="px-6 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-purple-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/25 data-[state=inactive]:text-zinc-400 data-[state=inactive]:hover:text-white data-[state=inactive]:hover:bg-white/5"
+                  >
+                    角色
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="scenes" 
+                    className="px-6 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-500/25 data-[state=inactive]:text-zinc-400 data-[state=inactive]:hover:text-white data-[state=inactive]:hover:bg-white/5"
+                  >
+                    场景
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="props" 
+                    className="px-6 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-amber-500/25 data-[state=inactive]:text-zinc-400 data-[state=inactive]:hover:text-white data-[state=inactive]:hover:bg-white/5"
+                  >
+                    物品
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="effects" 
+                    className="px-6 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-pink-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-pink-500/25 data-[state=inactive]:text-zinc-400 data-[state=inactive]:hover:text-white data-[state=inactive]:hover:bg-white/5"
+                  >
+                    特效
+                  </TabsTrigger>
                </TabsList>
                
                <TabsContent value="characters">

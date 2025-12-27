@@ -14,6 +14,7 @@ interface ImageUploaderProps {
   description?: string;
   className?: string;
   defaultValue?: string;
+  folder?: string; // OSS存储目录，默认 uploads
 }
 
 export default function ImageUploader({ 
@@ -21,7 +22,8 @@ export default function ImageUploader({
   label = "上传图片", 
   description = "支持 JPG、PNG 格式", 
   className,
-  defaultValue
+  defaultValue,
+  folder = "uploads"
 }: ImageUploaderProps) {
   const { toast } = useToast();
   const [uploading, setUploading] = useState(false);
@@ -44,24 +46,38 @@ export default function ImageUploader({
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await api.post('/upload/image', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      // 1. 获取OSS预签名上传URL
+      const presignRes = await api.post('/oss/presign', {
+        fileName: file.name,
+        folder: folder,
+        contentType: file.type
       });
 
-      const imageUrl = res.data.url;
-      setPreviewUrl(imageUrl);
-      onUpload(imageUrl);
+      const { uploadUrl, fileUrl, contentType } = presignRes.data;
+
+      // 2. 直接上传文件到OSS
+      await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType
+        },
+        body: file
+      });
+
+      // 3. 设置预览和回调
+      setPreviewUrl(fileUrl);
+      onUpload(fileUrl);
       toast("图片上传成功", "success");
     } catch (error: any) {
-      toast(error.response?.data?.error || "上传失败", "error");
+      console.error("Upload error:", error);
+      // 如果OSS未配置，回退到base64方式
+      if (error.response?.status === 503) {
+        toast("OSS未配置，请联系管理员配置阿里云OSS", "error");
+      } else {
+        toast(error.response?.data?.error || "上传失败", "error");
+      }
     } finally {
       setUploading(false);
-      // Reset input value so same file can be selected again if needed
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -96,7 +112,7 @@ export default function ImageUploader({
         {uploading ? (
           <div className="flex flex-col items-center gap-2 text-zinc-400">
             <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-            <span className="text-xs">正在上传...</span>
+            <span className="text-xs">正在上传到云端...</span>
           </div>
         ) : previewUrl ? (
           <div className="relative w-full h-full">
