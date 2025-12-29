@@ -27,8 +27,52 @@ const nextConfig = {
     remotePatterns: [
       { protocol: 'http', hostname: 'localhost' },
       { protocol: 'https', hostname: 'doradoapi.top' },
+      { protocol: 'https', hostname: '**' }, // 允许所有 HTTPS 图片
     ],
-    unoptimized: true, // 开发模式下跳过图片优化
+    // 生产环境启用优化，开发环境跳过
+    unoptimized: process.env.NODE_ENV === 'development',
+    // 图片缓存时间（秒）
+    minimumCacheTTL: 60 * 60 * 24 * 30, // 30天
+    // 设备尺寸断点
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    // 图片尺寸断点
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+  },
+  
+  // HTTP 响应头配置 - 添加缓存控制
+  async headers() {
+    return [
+      {
+        // 对所有图片资源添加缓存头
+        source: '/:all*(svg|jpg|jpeg|png|gif|ico|webp|avif)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        // 对视频资源添加缓存头
+        source: '/:all*(mp4|webm|ogg)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      {
+        // 对静态资源添加缓存头
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
   },
   
   // Webpack 优化

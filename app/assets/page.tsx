@@ -14,6 +14,7 @@ import api from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ImageUploader from "../anime-project/[id]/components/ImageUploader";
+import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 
 interface PublicAsset {
   id: number;
@@ -62,7 +63,15 @@ export default function PublicAssetsPage() {
     try {
       const params = activeTab === "all" ? {} : { category: activeTab };
       const res = await api.get("/public-assets", { params });
-      setAssets(res.data || []);
+      const data = res.data || [];
+      setAssets(data);
+      
+      // 预加载前8张图片
+      const imageUrls = data
+        .filter((a: PublicAsset) => a.imageUrl)
+        .slice(0, 8)
+        .map((a: PublicAsset) => a.imageUrl!);
+      preloadImages(imageUrls);
     } catch (error) {
       console.error("Failed to load public assets", error);
       toast("加载公共素材失败", "error");
@@ -258,7 +267,14 @@ export default function PublicAssetsPage() {
                           <div className="relative aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden border border-white/5 hover:border-blue-500/50 transition-all shadow-lg hover:shadow-blue-900/20">
                              {/* Image */}
                              {asset.imageUrl ? (
-                                <img src={asset.imageUrl} alt={asset.name} className="w-full h-full object-cover" />
+                                <OptimizedImage 
+                                  src={asset.imageUrl} 
+                                  alt={asset.name} 
+                                  className="w-full h-full"
+                                  objectFit="cover"
+                                  priority={assets.indexOf(asset) < 5}
+                                  placeholder="blur"
+                                />
                              ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-zinc-800/50">
                                    <ImageIcon className="w-10 h-10 text-zinc-600" />

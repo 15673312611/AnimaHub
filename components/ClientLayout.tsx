@@ -5,6 +5,7 @@ import { Suspense, memo } from "react";
 import { Sidebar } from "./Sidebar";
 import Navbar from "./Navbar";
 import { ToastProvider } from "./ui/toast-provider";
+import { ConfirmProvider } from "./ui/confirm-dialog";
 
 // 简单的加载占位符，保持布局稳定
 const PageLoader = memo(function PageLoader() {
@@ -27,22 +28,26 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   if (isAuthPage) {
     return (
       <ToastProvider>
-        <div className="min-h-screen w-full">{children}</div>
+        <ConfirmProvider>
+          <div className="min-h-screen w-full">{children}</div>
+        </ConfirmProvider>
       </ToastProvider>
     );
   }
 
   return (
     <ToastProvider>
-      <div className="flex min-h-screen bg-black">
-        {!isProjectPage && <MemoizedSidebar />}
-        <main className="flex-1 overflow-auto h-screen">
-          <MemoizedNavbar />
-          <Suspense fallback={<PageLoader />}>
-            {children}
-          </Suspense>
-        </main>
-      </div>
+      <ConfirmProvider>
+        <div className="flex min-h-screen bg-black">
+          {!isProjectPage && <MemoizedSidebar />}
+          <main className="flex-1 overflow-auto h-screen">
+            <MemoizedNavbar />
+            <Suspense fallback={<PageLoader />}>
+              {children}
+            </Suspense>
+          </main>
+        </div>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast-provider";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 
 interface Character {
   id: number;
@@ -56,11 +57,19 @@ export default function CharactersPage() {
         api.get("/projects/characters/list"),
         api.get("/projects")
       ]);
-      setCharacters(charRes.data);
+      const charData = charRes.data;
+      setCharacters(charData);
       setProjects(projRes.data);
       if (!projectId && projRes.data.length) {
         setProjectId(String(projRes.data[0].id));
       }
+      
+      // 预加载角色图片
+      const imageUrls = charData
+        .filter((c: Character) => c.imageUrl)
+        .slice(0, 8)
+        .map((c: Character) => c.imageUrl!);
+      preloadImages(imageUrls);
     } catch (error) {
       console.error("Failed to load characters", error);
       toast("加载角色列表失败", "error");
@@ -178,7 +187,12 @@ export default function CharactersPage() {
                             </CardDescription>
                           </div>
                           {char.imageUrl ? (
-                            <img src={char.imageUrl} alt={char.name} className="w-16 h-16 rounded-lg object-cover border border-white/10" />
+                            <OptimizedImage 
+                              src={char.imageUrl} 
+                              alt={char.name} 
+                              className="w-16 h-16 rounded-lg border border-white/10"
+                              objectFit="cover"
+                            />
                           ) : (
                             <div className="w-16 h-16 rounded-lg border border-dashed border-white/20 flex items-center justify-center text-gray-600 text-xs">No Cover</div>
                           )}

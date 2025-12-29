@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Film, LogOut, User, Loader2, Coins } from "lucide-react";
+import { Film, LogOut, User, Loader2, Coins, MessageCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
+import ChatDialog from "./ChatDialog";
 
 interface UserProfile {
   id: number;

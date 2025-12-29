@@ -35,6 +35,7 @@ import CharactersTab from "./components/CharactersTab";
 import ScenesTab from "./components/ScenesTab";
 import PropsTab from "./components/PropsTab";
 import EffectsTab from "./components/EffectsTab";
+import CompositeTab from "./components/CompositeTab";
 
 interface Project {
   id: number;
@@ -314,19 +315,43 @@ export default function AnimeProjectPage() {
                   >
                     特效
                   </TabsTrigger>
+                  <TabsTrigger 
+                    value="composites" 
+                    className="px-6 py-2 rounded-lg text-sm font-medium transition-all data-[state=active]:bg-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-cyan-500/25 data-[state=inactive]:text-zinc-400 data-[state=inactive]:hover:text-white data-[state=inactive]:hover:bg-white/5"
+                  >
+                    融合图
+                  </TabsTrigger>
                </TabsList>
                
-               <TabsContent value="characters">
+               {/* forceMount 保持组件挂载，避免切换 Tab 时重新加载图片 */}
+               <TabsContent value="characters" forceMount className="data-[state=inactive]:hidden">
                  <CharactersTab projectId={project.id} characters={project.assetCharacters || []} onUpdate={fetchProject} />
                </TabsContent>
-               <TabsContent value="scenes">
+               <TabsContent value="scenes" forceMount className="data-[state=inactive]:hidden">
                  <ScenesTab projectId={project.id} scenes={project.assetScenes || []} onUpdate={fetchProject} />
                </TabsContent>
-               <TabsContent value="props">
+               <TabsContent value="props" forceMount className="data-[state=inactive]:hidden">
                  <PropsTab projectId={project.id} props={project.assetProps || []} onUpdate={fetchProject} />
                </TabsContent>
-               <TabsContent value="effects">
+               <TabsContent value="effects" forceMount className="data-[state=inactive]:hidden">
                  <EffectsTab projectId={project.id} effects={project.assetEffects || []} onUpdate={fetchProject} />
+               </TabsContent>
+               <TabsContent value="composites" forceMount className="data-[state=inactive]:hidden">
+                 <CompositeTab 
+                   projectId={project.id} 
+                   composites={project.compositeImages || []} 
+                   onUpdate={fetchProject}
+                   onUseForVideo={(imageUrl, prompt) => {
+                     // 存储到 sessionStorage，然后导航到第一个片段
+                     sessionStorage.setItem('useForVideo', JSON.stringify({ imageUrl, prompt }));
+                     const firstFragment = project.generatedVideos?.[0];
+                     if (firstFragment) {
+                       router.push(`/anime-project/${project.id}/fragment/${firstFragment.id}?useForVideo=1`);
+                     } else {
+                       toast("请先创建一个片段", "error");
+                     }
+                   }}
+                 />
                </TabsContent>
             </Tabs>
           </TabsContent>

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import api from "@/lib/api";
 import { wsService } from "@/lib/websocket";
+import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 
 const MODELS = [
   { value: "nano-banana-2-4k", label: "Nano Banana 2 (4K)", desc: "快速生成，适合测试" },
@@ -181,7 +182,15 @@ export default function AiImagePage() {
   const fetchHistory = async () => {
     try {
       const res = await api.get("/images/history");
-      setHistory(res.data);
+      const data = res.data;
+      setHistory(data);
+      
+      // 预加载历史记录中的图片
+      const imageUrls = data
+        .filter((item: any) => item.imageUrl)
+        .slice(0, 10)
+        .map((item: any) => item.imageUrl);
+      preloadImages(imageUrls);
     } catch (err) {
       console.error("Failed to fetch history", err);
     } finally {
@@ -666,17 +675,19 @@ export default function AiImagePage() {
                         <p>暂无历史记录</p>
                      </div>
                   )}
-                  {history.map((item) => (
+                  {history.map((item, index) => (
                      <div 
                        key={item.id} 
                        className="group relative aspect-square bg-[#0a0a0a] rounded-2xl overflow-hidden border border-white/5 hover:border-amber-500/50 cursor-pointer shadow-lg hover:shadow-amber-500/10 transition-[border-color,box-shadow] duration-200" 
                        onClick={() => loadHistoryItem(item)}
                      >
-                        <img 
+                        <OptimizedImage 
                           src={item.imageUrl} 
                           alt={item.prompt} 
-                          className="w-full h-full object-cover will-change-transform group-hover:scale-105 transition-transform duration-300 ease-out" 
-                          loading="lazy"
+                          className="w-full h-full group-hover:scale-105 transition-transform duration-300 ease-out"
+                          objectFit="cover"
+                          priority={index < 6}
+                          placeholder="blur"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-4">
                            <div className="flex items-center gap-2 mb-2">

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Video, Play, Download, Share2, Trash2, Loader2 } from "lucide-react";
 import api from "@/lib/api";
+import { OptimizedVideo } from "@/components/OptimizedMedia";
 
 interface VideoItem {
   id: number;
@@ -95,10 +96,12 @@ export default function VideosPage() {
             {videos.map((video) => (
               <Card key={video.id} className="bg-white/5 border-white/10 hover:border-cyan-500/50 transition-all group overflow-hidden">
                 <div className="aspect-video bg-black relative overflow-hidden">
-                  <video 
+                  <OptimizedVideo 
                     src={`http://localhost:3001${video.url}`}
-                    className="w-full h-full object-cover"
-                    poster="/api/placeholder/640/360"
+                    className="w-full h-full"
+                    controls={false}
+                    preload="metadata"
+                    muted
                   />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <Button 

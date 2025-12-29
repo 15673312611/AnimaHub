@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User, MapPin, Box, Search, Upload, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { OptimizedImage } from "@/components/OptimizedMedia";
 
 interface AssetPickerProps {
   type: "char" | "scene" | "prop" | "refImage" | "endImage";
@@ -73,7 +74,13 @@ export function AssetPicker({ type, characters, scenes, props, onSelect }: Asset
                 onClick={() => onSelect(item)}
               >
                 {item.imageUrl || item.profilePictureUrl ? (
-                  <img src={item.imageUrl || item.profilePictureUrl} className="w-full h-full object-cover" />
+                  <OptimizedImage 
+                    src={item.imageUrl || item.profilePictureUrl} 
+                    alt={item.name}
+                    className="w-full h-full"
+                    objectFit="cover"
+                    placeholder="blur"
+                  />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-zinc-600">
                      {activeTab === 'characters' && <User className="h-8 w-8" />}

@@ -8,6 +8,10 @@ export interface ApiError {
   details?: any;
 }
 
+// Toast 类型定义，与 toast-provider 保持一致
+export type ToastType = "success" | "error" | "info";
+export type ToastFn = (message: string, type?: ToastType) => void;
+
 /**
  * 从 API 错误响应中提取错误信息
  */
@@ -89,7 +93,7 @@ export function formatErrorForDisplay(error: any): string {
 /**
  * 处理 API 错误并显示 toast
  */
-export function handleApiError(error: any, toast: (message: string, type: string) => void, defaultMessage?: string) {
+export function handleApiError(error: any, toast: ToastFn, defaultMessage?: string) {
   const message = formatErrorForDisplay(error);
   toast(defaultMessage || message, 'error');
   
@@ -104,7 +108,7 @@ export function handleApiError(error: any, toast: (message: string, type: string
  */
 export async function safeAsync<T>(
   fn: () => Promise<T>,
-  toast: (message: string, type: string) => void,
+  toast: ToastFn,
   options?: {
     successMessage?: string;
     errorMessage?: string;

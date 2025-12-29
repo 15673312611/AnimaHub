@@ -9,6 +9,7 @@ import ImageUploader from "./ImageUploader";
 import api from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 import { cn } from "@/lib/utils";
+import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 
 interface AssetSelectorDialogProps {
   open: boolean;
@@ -294,14 +295,21 @@ export default function AssetSelectorDialog({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {displayAssets.map((asset) => (
+                    {displayAssets.map((asset, index) => (
                       <div
                         key={asset.id}
                         onClick={() => handleSelectAsset(asset)}
                         className="group relative aspect-[3/4] bg-zinc-900 rounded-xl overflow-hidden border border-white/5 hover:border-purple-500/50 cursor-pointer transition-all hover:scale-105"
                       >
                         {asset.imageUrl ? (
-                          <img src={asset.imageUrl} alt={asset.name} className="w-full h-full object-cover" />
+                          <OptimizedImage 
+                            src={asset.imageUrl} 
+                            alt={asset.name} 
+                            className="w-full h-full"
+                            objectFit="cover"
+                            priority={index < 10}
+                            placeholder="blur"
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon className="w-10 h-10 text-zinc-700" />
