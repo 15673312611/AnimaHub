@@ -23,7 +23,8 @@ import {
   RefreshCw,
   BookOpen,
   Loader2,
-  X
+  X,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { handleApiError, safeAsync } from "@/lib/error-handler";
 import { useProjectWebSocket } from "@/lib/useWebSocket";
 import { OptimizedImage, OptimizedVideo } from "@/components/OptimizedMedia";
+import { useImageModels } from "@/lib/useImageModels";
+import { useVideoModels } from "@/lib/useVideoModels";
 
 // Components
 import { AssetPicker } from "./AssetPicker"; // We will create a simple inline picker or mock it
@@ -70,8 +73,10 @@ const SHOT_TYPES = [
 ];
 
 const RATIOS = [
+  { id: "3:4", label: "3:4 竖屏" },
   { id: "9:16", label: "9:16 竖屏" },
   { id: "16:9", label: "16:9 横屏" },
+  { id: "4:3", label: "4:3 横屏" },
   { id: "2.35:1", label: "2.35:1 电影" },
   { id: "1:1", label: "1:1 方形" },
 ];
@@ -102,19 +107,18 @@ export default function FragmentEditor({
   const [prompt, setPrompt] = useState("");
   const [negPrompt, setNegPrompt] = useState("");
   const [duration, setDuration] = useState(5);
-  const [ratio, setRatio] = useState("9:16");
-  const [resolution, setResolution] = useState("1080p");
-  const [batchSize, setBatchSize] = useState(1);
-  const [videoModel, setVideoModel] = useState<string>("veo3.1");
+  const [ratio, setRatio] = useState("16:9");
+  const [videoModel, setVideoModel] = useState<string>("");
   
-  // 当 videoMode 改变时，自动切换对应的模型
+  // 根据 videoMode 获取对应的视频模型列表
+  const { models: videoModels, defaultModel: defaultVideoModel, loading: videoModelsLoading } = useVideoModels(videoMode);
+  
+  // 当视频模型列表加载完成后，设置默认模型
   useEffect(() => {
-    if (videoMode === "fusion") {
-      setVideoModel("veo3.1-components");
-    } else {
-      setVideoModel("veo3.1");
+    if (!videoModelsLoading && defaultVideoModel) {
+      setVideoModel(defaultVideoModel);
     }
-  }, [videoMode]);
+  }, [videoModelsLoading, defaultVideoModel, videoMode]);
   
   // 处理从融合图库传入的初始值
   useEffect(() => {
@@ -182,7 +186,17 @@ export default function FragmentEditor({
   // Assets Picker State
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTarget, setPickerTarget] = useState<"char" | "scene" | "prop" | "refImage" | "endImage">("char");
-  const [imageModel, setImageModel] = useState<string>("nano-banana-2-2k");
+  
+  // 使用 API 获取图片模型列表
+  const { models: imageModels, defaultModel: defaultImageModel, loading: modelsLoading } = useImageModels("project");
+  const [imageModel, setImageModel] = useState<string>("");
+  
+  // 当模型列表加载完成后，设置默认模型
+  useEffect(() => {
+    if (!modelsLoading && defaultImageModel && !imageModel) {
+      setImageModel(defaultImageModel);
+    }
+  }, [modelsLoading, defaultImageModel, imageModel]);
 
   // Loading
   const [generating, setGenerating] = useState(false);
@@ -199,6 +213,9 @@ export default function FragmentEditor({
   // 批量下载模式
   const [selectMode, setSelectMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  
+  // 图片预览
+  const [previewImage, setPreviewImage] = useState<{ url: string; title: string } | null>(null);
   
   // Script Selector
   const [scriptDialogOpen, setScriptDialogOpen] = useState(false);
@@ -252,6 +269,53 @@ export default function FragmentEditor({
     }
   }, [imageName]);
 
+  // 根据图片尺寸自动选择最接近的比例
+  const detectAndSetRatio = useCallback((imageUrls: string[]) => {
+    if (imageUrls.length === 0) return;
+    
+    // 加载所有图片获取尺寸
+    const loadPromises = imageUrls.map(url => {
+      return new Promise<{ width: number; height: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve({ width: 0, height: 0 });
+        img.src = url;
+      });
+    });
+    
+    Promise.all(loadPromises).then(sizes => {
+      // 找到最宽的图片
+      const validSizes = sizes.filter(s => s.width > 0);
+      if (validSizes.length === 0) return;
+      
+      const widest = validSizes.reduce((max, s) => s.width > max.width ? s : max, validSizes[0]);
+      const aspectRatio = widest.width / widest.height;
+      
+      // 根据宽高比选择最接近的比例
+      let bestRatio = "3:4"; // 默认
+      const ratioValues: { [key: string]: number } = {
+        "3:4": 3/4,      // 0.75
+        "9:16": 9/16,    // 0.5625
+        "1:1": 1,        // 1
+        "4:3": 4/3,      // 1.333
+        "16:9": 16/9,    // 1.778
+        "2.35:1": 2.35,  // 2.35
+      };
+      
+      let minDiff = Infinity;
+      for (const [ratio, value] of Object.entries(ratioValues)) {
+        const diff = Math.abs(aspectRatio - value);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestRatio = ratio;
+        }
+      }
+      
+      setRatio(bestRatio);
+      console.log(`📐 检测到图片尺寸 ${widest.width}x${widest.height}，自动设置比例为 ${bestRatio}`);
+    });
+  }, []);
+
   // AI 丰富提示词 - 根据模式区分视频/融图
   const handleAiEnhancePrompt = async () => {
     setAiPromptGenerating(true);
@@ -262,21 +326,21 @@ export default function FragmentEditor({
           // 融合生视频模式：收集所有素材图片，使用融图接口
           const imageUrls: string[] = [];
           
-          // 收集所有素材图片（使用缩略图）
+          // 收集所有素材图片（使用800px缩略图）
           selectedChars.forEach(char => {
-            if (char.imageUrl) imageUrls.push(toThumbnailUrl(char.imageUrl));
+            if (char.imageUrl) imageUrls.push(toThumbnailUrl(char.imageUrl, 800));
           });
           selectedScenes.forEach(scene => {
-            if (scene.imageUrl) imageUrls.push(toThumbnailUrl(scene.imageUrl));
+            if (scene.imageUrl) imageUrls.push(toThumbnailUrl(scene.imageUrl, 800));
           });
           selectedProps.forEach(prop => {
-            if (prop.imageUrl) imageUrls.push(toThumbnailUrl(prop.imageUrl));
+            if (prop.imageUrl) imageUrls.push(toThumbnailUrl(prop.imageUrl, 800));
           });
           selectedEffects.forEach(effect => {
-            if (effect.imageUrl) imageUrls.push(toThumbnailUrl(effect.imageUrl));
+            if (effect.imageUrl) imageUrls.push(toThumbnailUrl(effect.imageUrl, 800));
           });
           if (poseImage) {
-            imageUrls.unshift(toThumbnailUrl(poseImage));
+            imageUrls.unshift(toThumbnailUrl(poseImage, 800));
           }
           
           if (!prompt.trim() && imageUrls.length === 0) {
@@ -322,7 +386,7 @@ export default function FragmentEditor({
           
           const res = await api.post("/ai/enhance-video-prompt", {
             description: prompt || "",
-            imageUrl: imageUrl ? toThumbnailUrl(imageUrl) : null
+            imageUrl: imageUrl ? toThumbnailUrl(imageUrl, 800) : null
           });
           if (res.data?.prompt) {
             setPrompt(res.data.prompt);
@@ -333,21 +397,21 @@ export default function FragmentEditor({
         // 在线融图模式：传入融合素材图片，使用图片生成专用接口
         const imageUrls: string[] = [];
         
-        // 收集所有素材图片（使用缩略图）
+        // 收集所有素材图片（使用800px缩略图）
         selectedChars.forEach(char => {
-          if (char.imageUrl) imageUrls.push(toThumbnailUrl(char.imageUrl));
+          if (char.imageUrl) imageUrls.push(toThumbnailUrl(char.imageUrl, 800));
         });
         selectedScenes.forEach(scene => {
-          if (scene.imageUrl) imageUrls.push(toThumbnailUrl(scene.imageUrl));
+          if (scene.imageUrl) imageUrls.push(toThumbnailUrl(scene.imageUrl, 800));
         });
         selectedProps.forEach(prop => {
-          if (prop.imageUrl) imageUrls.push(toThumbnailUrl(prop.imageUrl));
+          if (prop.imageUrl) imageUrls.push(toThumbnailUrl(prop.imageUrl, 800));
         });
         selectedEffects.forEach(effect => {
-          if (effect.imageUrl) imageUrls.push(toThumbnailUrl(effect.imageUrl));
+          if (effect.imageUrl) imageUrls.push(toThumbnailUrl(effect.imageUrl, 800));
         });
         if (poseImage) {
-          imageUrls.unshift(toThumbnailUrl(poseImage));
+          imageUrls.unshift(toThumbnailUrl(poseImage, 800));
         }
         
         if (!prompt.trim() && imageUrls.length === 0) {
@@ -524,7 +588,10 @@ export default function FragmentEditor({
       addEffect(asset);
     }
     
-    onUpdate();
+    // 如果有图片URL，自动检测尺寸并设置比例
+    if (url && (uploadTarget === "char" || uploadTarget === "scene" || uploadTarget === "prop" || uploadTarget === "effect" || uploadTarget === "pose")) {
+      detectAndSetRatio([url]);
+    }
   };
   
   const handleScriptShotSelect = (shot: any, characters: any[], scenes: any[], scriptInfo?: { scriptId: number; scriptTitle: string; shotIndex: number }) => {
@@ -536,6 +603,7 @@ export default function FragmentEditor({
     if (isImg2Video) {
       // img2video 模式：需要先生成图片，切换到"在线融图"模式
       // 使用 startFrame 作为图片生成提示词
+      // ⚠️ 第一帧绘画提示词不能包含对白，对白只能在视频运动提示词(motion)中
       fullPrompt = shot.startFrame || "";
       
       // 切换到在线融图模式
@@ -548,11 +616,11 @@ export default function FragmentEditor({
       // 切换到视频生成 - 融合模式
       setCreationMode("video");
       setVideoMode("fusion");
-    }
-    
-    // 添加对白（如果有）
-    if (shot.dialogue) {
-      fullPrompt += `\n对白: "${shot.dialogue}"`;
+      
+      // 只有视频模式才添加对白（对白在镜头语言/视频运动提示词中）
+      if (shot.dialogue) {
+        fullPrompt += `\n对白: "${shot.dialogue}"`;
+      }
     }
     
     setPrompt(fullPrompt);
@@ -570,25 +638,25 @@ export default function FragmentEditor({
       setImageName(`剧本《${scriptInfo.scriptTitle}》镜头${scriptInfo.shotIndex}`);
     }
     
-    // 清空之前的选择
-    setSelectedChars([]);
-    setSelectedScenes([]);
+    // 收集所有有图片的人物素材
+    const charsWithImage = characters.filter(char => char.imageUrl);
+    // 收集所有有图片的场景素材
+    const scenesWithImage = scenes.filter(scene => scene.imageUrl);
+    
+    // 一次性设置所有素材（避免闭包问题）
+    setSelectedChars(charsWithImage);
+    setSelectedScenes(scenesWithImage);
     setSelectedProps([]);
     setSelectedEffects([]);
     
-    // 添加人物素材
-    characters.forEach(char => {
-      if (char.imageUrl) {
-        addChar(char);
-      }
-    });
-    
-    // 添加场景素材
-    scenes.forEach(scene => {
-      if (scene.imageUrl) {
-        addScene(scene);
-      }
-    });
+    // 收集所有图片URL，自动检测尺寸并设置比例
+    const allImageUrls = [
+      ...charsWithImage.map(c => c.imageUrl),
+      ...scenesWithImage.map(s => s.imageUrl)
+    ].filter(Boolean);
+    if (allImageUrls.length > 0) {
+      detectAndSetRatio(allImageUrls);
+    }
     
     if (isImg2Video) {
       toast("已加载镜头到「在线融图」，请先生成第一帧图片", "success");
@@ -687,6 +755,7 @@ export default function FragmentEditor({
              payload.prompt = prompt;
           } else if (videoMode === "fusion") {
              // 融合生视频模式 - 收集所有素材图片URL
+             // 后端会自动检测融合模式：有componentImages但没有startImageUrl
              const componentImages: string[] = [];
              
              // 添加所有角色图片
@@ -710,6 +779,10 @@ export default function FragmentEditor({
                componentImages.unshift(poseImage);
              }
              
+             if (componentImages.length === 0) {
+               throw new Error("融合模式需要至少选择一个素材");
+             }
+             
              // 构建融合提示词
              let fusionPrompt = prompt;
              selectedChars.forEach(char => {
@@ -725,12 +798,12 @@ export default function FragmentEditor({
                fusionPrompt += ` Effect: ${effect.name}`;
              });
              
+             // 质量参数由后端智能添加，前端只传原始提示词
              payload.prompt = fusionPrompt;
-             // 使用第一张图作为startImageUrl，其余作为componentImages
-             payload.startImageUrl = componentImages[0] || "https://placehold.co/1920x1080.png?text=FusionBase";
-             if (componentImages.length > 1) {
-               payload.componentImages = componentImages.slice(1);
-             }
+             payload.ratio = ratio;
+             // 不传 startImageUrl，让后端检测为融合模式
+             // 后端会：1.AI分析生成首帧提示词 2.豆包生成首帧图片 3.图片完成后自动生成视频
+             payload.componentImages = componentImages;
           }
 
           return await api.post(`/projects/${projectId}/videos`, payload);
@@ -774,6 +847,7 @@ export default function FragmentEditor({
             fusionPrompt += ` Effect: ${effect.name}`;
           });
           
+          // 质量参数由后端智能添加，前端只传原始提示词
           const imgPayload: any = {
             projectId,
             name: (imageName && imageName.trim()) ? imageName.trim() : `融合图 - ${new Date().toLocaleTimeString()}`,
@@ -826,28 +900,28 @@ export default function FragmentEditor({
   const handleWebSocketMessage = useCallback((message: any) => {
     if (message.type === 'VIDEO_STATUS_UPDATE') {
       console.log('📥 收到视频状态更新:', message);
-      // 刷新数据
-      onUpdate();
       
-      // 显示通知
+      // 只在完成或失败时刷新数据和显示通知
       if (message.status === 'COMPLETED') {
+        onUpdate();
         toast("🎉 视频生成完成！", "success");
       } else if (message.status === 'FAILED') {
+        onUpdate();
         toast(`❌ 视频生成失败: ${message.errorMessage || '未知错误'}`, "error");
       }
+      // GENERATING 状态不刷新，避免重复请求
     } else if (message.type === 'IMAGE_STATUS_UPDATE') {
       console.log('📥 收到图片状态更新:', message);
-      // 刷新数据
-      onUpdate();
       
-      // 显示通知
+      // 只在完成或失败时刷新数据和显示通知
       if (message.status === 'COMPLETED') {
+        onUpdate();
         toast("🎉 图片生成完成！", "success");
       } else if (message.status === 'FAILED') {
+        onUpdate();
         toast(`❌ 图片生成失败: ${message.errorMessage || '未知错误'}`, "error");
-      } else if (message.status === 'GENERATING') {
-        toast("🎨 图片正在生成中...", "info");
       }
+      // GENERATING 状态不刷新也不提示，避免重复
     }
   }, [onUpdate, toast]);
   
@@ -889,10 +963,20 @@ export default function FragmentEditor({
         </div>
 
         <div className="flex items-center gap-4">
-           {/* Global Action / Agent Status could go here */}
-           <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-full px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-purple-900/20">
+           {/* AI Agent 入口按钮 */}
+           <button
+             onClick={() => {
+               if (fragmentId) {
+                 window.location.href = `/anime-project/${projectId}/fragment/${fragmentId}/ai-agent`;
+               } else {
+                 toast("请先选择一个片段", "error");
+               }
+             }}
+             className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-full px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-purple-900/20 transition-all hover:shadow-purple-900/40 cursor-pointer flex items-center gap-2"
+           >
+             <Sparkles className="h-3 w-3" />
              AI Agent 在线
-           </div>
+           </button>
         </div>
       </header>
 
@@ -1130,7 +1214,7 @@ export default function FragmentEditor({
                                   <div key={`char-${char.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                                     <div className="rounded-xl overflow-hidden border-2 border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-500/10" style={{ width: 76, height: 76 }}>
                                       {char.imageUrl ? (
-                                        <img src={toThumbnailUrl(char.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                        <img src={toThumbnailUrl(char.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                       ) : (
                                         <div className="w-full h-full flex items-center justify-center">
                                           <User className="h-6 w-6 text-purple-400" />
@@ -1177,7 +1261,7 @@ export default function FragmentEditor({
                                   <div key={`scene-${scene.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                                     <div className="rounded-xl overflow-hidden border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/10" style={{ width: 76, height: 76 }}>
                                       {scene.imageUrl ? (
-                                        <img src={toThumbnailUrl(scene.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                        <img src={toThumbnailUrl(scene.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                       ) : (
                                         <div className="w-full h-full flex items-center justify-center">
                                           <MapPin className="h-6 w-6 text-blue-400" />
@@ -1224,7 +1308,7 @@ export default function FragmentEditor({
                                   <div key={`prop-${prop.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                                     <div className="rounded-xl overflow-hidden border-2 border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/10" style={{ width: 76, height: 76 }}>
                                       {prop.imageUrl ? (
-                                        <img src={toThumbnailUrl(prop.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                        <img src={toThumbnailUrl(prop.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                       ) : (
                                         <div className="w-full h-full flex items-center justify-center">
                                           <Box className="h-6 w-6 text-amber-400" />
@@ -1271,7 +1355,7 @@ export default function FragmentEditor({
                                   <div key={`effect-${effect.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                                     <div className="rounded-xl overflow-hidden border-2 border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/10" style={{ width: 76, height: 76 }}>
                                       {effect.imageUrl ? (
-                                        <img src={toThumbnailUrl(effect.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                        <img src={toThumbnailUrl(effect.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                       ) : (
                                         <div className="w-full h-full flex items-center justify-center">
                                           <Sparkles className="h-6 w-6 text-pink-400" />
@@ -1359,7 +1443,7 @@ export default function FragmentEditor({
                            <div key={`char-${char.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                              <div className="rounded-xl overflow-hidden border-2 border-purple-500/50 bg-purple-500/10 shadow-lg shadow-purple-500/10" style={{ width: 76, height: 76 }}>
                                {char.imageUrl ? (
-                                 <img src={toThumbnailUrl(char.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                 <img src={toThumbnailUrl(char.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                ) : (
                                  <div className="w-full h-full flex items-center justify-center">
                                    <User className="h-6 w-6 text-purple-400" />
@@ -1406,7 +1490,7 @@ export default function FragmentEditor({
                            <div key={`scene-${scene.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                              <div className="rounded-xl overflow-hidden border-2 border-blue-500/50 bg-blue-500/10 shadow-lg shadow-blue-500/10" style={{ width: 76, height: 76 }}>
                                {scene.imageUrl ? (
-                                 <img src={toThumbnailUrl(scene.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                 <img src={toThumbnailUrl(scene.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                ) : (
                                  <div className="w-full h-full flex items-center justify-center">
                                    <MapPin className="h-6 w-6 text-blue-400" />
@@ -1453,7 +1537,7 @@ export default function FragmentEditor({
                            <div key={`prop-${prop.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                              <div className="rounded-xl overflow-hidden border-2 border-amber-500/50 bg-amber-500/10 shadow-lg shadow-amber-500/10" style={{ width: 76, height: 76 }}>
                                {prop.imageUrl ? (
-                                 <img src={toThumbnailUrl(prop.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                 <img src={toThumbnailUrl(prop.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                ) : (
                                  <div className="w-full h-full flex items-center justify-center">
                                    <Box className="h-6 w-6 text-amber-400" />
@@ -1500,7 +1584,7 @@ export default function FragmentEditor({
                            <div key={`effect-${effect.id}`} className="relative group" style={{ width: 76, flexShrink: 0 }}>
                              <div className="rounded-xl overflow-hidden border-2 border-pink-500/50 bg-pink-500/10 shadow-lg shadow-pink-500/10" style={{ width: 76, height: 76 }}>
                                {effect.imageUrl ? (
-                                 <img src={toThumbnailUrl(effect.imageUrl, 76)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
+                                 <img src={toThumbnailUrl(effect.imageUrl, 200)} style={{ width: 76, height: 76, objectFit: 'cover' }} />
                                ) : (
                                  <div className="w-full h-full flex items-center justify-center">
                                    <Sparkles className="h-6 w-6 text-pink-400" />
@@ -1643,27 +1727,6 @@ export default function FragmentEditor({
                    </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-2">
-                      <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">分辨率</Label>
-                      <div className="text-xs bg-zinc-900 border border-white/10 rounded px-3 py-2 text-zinc-300">
-                        {resolution}
-                      </div>
-                   </div>
-                   <div className="space-y-2">
-                      <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">数量</Label>
-                      <div className="flex items-center gap-2">
-                         <Input 
-                           type="number" 
-                           min={1} 
-                           max={4} 
-                           value={batchSize} 
-                           onChange={(e) => setBatchSize(Number(e.target.value))}
-                           className="bg-zinc-900 border-white/10 h-8 text-xs"
-                         />
-                      </div>
-                   </div>
-                </div>
                 {creationMode === 'video' && (
                   <div className="space-y-2">
                     <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">视频模型</Label>
@@ -1671,11 +1734,16 @@ export default function FragmentEditor({
                       value={videoModel}
                       onChange={(e) => setVideoModel(e.target.value)}
                       className="w-full bg-zinc-900 border border-white/10 rounded-md text-xs py-1.5 px-2 focus:outline-none"
+                      disabled={videoModelsLoading}
                     >
-                      {videoMode === "fusion" ? (
-                        <option value="veo3.1-components">Veo 3.1 Components（融合专用）</option>
+                      {videoModelsLoading ? (
+                        <option value="">加载中...</option>
                       ) : (
-                        <option value="veo3.1">Veo 3.1</option>
+                        videoModels.map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))
                       )}
                     </select>
                   </div>
@@ -1687,10 +1755,17 @@ export default function FragmentEditor({
                       value={imageModel}
                       onChange={(e) => setImageModel(e.target.value)}
                       className="w-full bg-zinc-900 border border-white/10 rounded-md text-xs py-1.5 px-2 focus:outline-none"
+                      disabled={modelsLoading}
                     >
-                      <option value="nano-banana-2-2k">Nano Banana 2K</option>
-                      <option value="nano-banana-2-4k">Nano Banana 4K</option>
-                      <option value="mj_relax_imagine">Midjourney (Relax)</option>
+                      {modelsLoading ? (
+                        <option value="">加载中...</option>
+                      ) : (
+                        imageModels.map((model) => (
+                          <option key={model.value} value={model.value}>
+                            {model.label}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
                 )}
@@ -1866,10 +1941,12 @@ export default function FragmentEditor({
                                  />
                               ) : (
                                  <div className="w-full h-full flex flex-col items-center justify-center text-zinc-700">
-                                    {item.status === 'GENERATING' ? (
+                                    {(item.status === 'GENERATING' || item.status === 'PENDING_IMAGE') ? (
                                       <div className="flex flex-col items-center gap-2">
                                          <div className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                                         <span className="text-[10px] text-purple-400">Rendering...</span>
+                                         <span className="text-[10px] text-purple-400">
+                                           {item.status === 'PENDING_IMAGE' ? '生成首帧中...' : 'Rendering...'}
+                                         </span>
                                       </div>
                                     ) : (
                                       <Video className="h-8 w-8 opacity-20" />
@@ -1926,11 +2003,70 @@ export default function FragmentEditor({
                           </div>
                           <p className="text-[10px] text-zinc-500 line-clamp-2 h-8">{item.description}</p>
                           <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
-                             <span className="text-[10px] text-zinc-600">
-                                {item.type === 'video' ? `${item.duration}s • ${item.generationModel}` : item.ratio || '16:9'}
-                             </span>
+                             <div className="flex flex-col gap-0.5">
+                               <span className="text-[10px] text-zinc-600">
+                                  {item.type === 'video' ? `${item.duration}s • ${item.generationModel}` : item.ratio || '16:9'}
+                               </span>
+                               <span className="text-[9px] text-zinc-700">
+                                  {item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                               </span>
+                             </div>
                              {!selectMode && (
                                <div className="flex items-center gap-2">
+                                 {/* 重新生成按钮 */}
+                                 <button 
+                                   className="text-amber-400 hover:text-amber-300"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     if (item.type === 'video') {
+                                       // 视频：导入参考图和提示词到视频生成
+                                       if (item.startImageUrl) {
+                                         setRefImage(item.startImageUrl);
+                                       }
+                                       if (item.endImageUrl) {
+                                         setEndImage(item.endImageUrl);
+                                         setVideoMode("frame2frame");
+                                       } else {
+                                         setVideoMode("img2vid");
+                                       }
+                                       setPrompt(item.prompt || item.description || "");
+                                       setVideoName(item.name || "");
+                                       setCreationMode("video");
+                                       if (item.duration) setDuration(item.duration);
+                                       toast("已导入视频参数，可重新生成", "success");
+                                     } else {
+                                       // 图片：导入参考图和提示词到在线融图
+                                       setPrompt(item.prompt || item.description || "");
+                                       setImageName(item.name || "");
+                                       setCreationMode("image");
+                                       // 如果有参考图片，尝试还原
+                                       if (item.referenceImages && item.referenceImages.length > 0) {
+                                         // 清空当前选择，准备重新加载
+                                         setSelectedChars([]);
+                                         setSelectedScenes([]);
+                                         setSelectedProps([]);
+                                         setSelectedEffects([]);
+                                       }
+                                       toast("已导入图片参数，可重新生成", "success");
+                                     }
+                                   }}
+                                   title="重新生成"
+                                 >
+                                   <RefreshCw className="h-3 w-3" />
+                                 </button>
+                                 {/* 图片专用：查看大图按钮 */}
+                                 {item.type === 'image' && item.imageUrl && (
+                                   <button 
+                                     className="text-cyan-400 hover:text-cyan-300"
+                                     onClick={(e) => {
+                                       e.stopPropagation();
+                                       setPreviewImage({ url: item.imageUrl, title: item.name || '生成的图片' });
+                                     }}
+                                     title="查看大图"
+                                   >
+                                      <Maximize2 className="h-3 w-3" />
+                                   </button>
+                                 )}
                                  {/* 图片专用：用于生视频按钮 */}
                                  {item.type === 'image' && item.imageUrl && (
                                    <button 
@@ -2034,6 +2170,31 @@ export default function FragmentEditor({
           }
         }}
       />
+      
+      {/* 图片预览弹窗 */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors"
+          >
+            <X className="h-6 w-6 text-white" />
+          </button>
+          <div className="max-w-[90vw] max-h-[90vh] relative" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={previewImage.url} 
+              alt={previewImage.title}
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+            />
+            <p className="absolute bottom-0 left-0 right-0 text-center text-white text-sm py-2 bg-black/50 rounded-b-lg">
+              {previewImage.title}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

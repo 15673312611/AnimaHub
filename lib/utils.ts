@@ -8,20 +8,21 @@ export function cn(...inputs: ClassValue[]) {
 /**
  * 将图片URL转换为缩略图URL（阿里云OSS图片处理）
  * @param url 原始图片URL
- * @param width 缩略图宽度，默认200px
+ * @param width 缩略图宽度，默认800px（不要太小，否则图片会模糊）
  * @returns 缩略图URL
  * 
  * 使用场景：
- * - 列表卡片: 200px
- * - 素材缩略图: 76px (FragmentEditor中的素材展示)
- * - AI接口调用: 200px
+ * - 默认/通用: 800px（保证清晰度）
+ * - 小型参考图: 200px（参考素材选择器中的小图）
+ * - 微型缩略图: 76px（FragmentEditor中的素材展示）
+ * - AI接口调用: 200px（节省token）
  * 
  * 不使用缩略图的场景：
- * - 用户点击查看大图时
+ * - 用户点击查看大图时（使用原图URL）
  * - 实际提交生成任务时（需要原图URL）
  * - 下载功能
  */
-export function toThumbnailUrl(url: string, width: number = 200): string {
+export function toThumbnailUrl(url: string, width: number = 800): string {
   if (!url) return url;
   // 只处理阿里云OSS链接
   if (url.includes("aliyuncs.com")) {

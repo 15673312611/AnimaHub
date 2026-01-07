@@ -35,13 +35,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     );
   }
 
+  // 全屏模式页面：隐藏全局侧边栏和顶部导航
+  const isFullScreenPage = isProjectPage;
+
   return (
     <ToastProvider>
       <ConfirmProvider>
         <div className="flex min-h-screen bg-black">
-          {!isProjectPage && <MemoizedSidebar />}
+          {!isFullScreenPage && <MemoizedSidebar />}
           <main className="flex-1 overflow-auto h-screen">
-            <MemoizedNavbar />
+            {!isFullScreenPage && <MemoizedNavbar />}
             <Suspense fallback={<PageLoader />}>
               {children}
             </Suspense>

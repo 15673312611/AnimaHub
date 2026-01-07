@@ -21,10 +21,14 @@ api.interceptors.response.use(
     if (error.response?.status === 401 || error.response?.status === 403) {
       // 如果是认证错误，清除 token 并跳转到登录页
       if (typeof window !== 'undefined') {
+        const currentPath = window.location.pathname;
+        // 如果当前已经在登录页或注册页，不要跳转（避免登录失败时刷新页面）
+        if (currentPath === '/login' || currentPath === '/register') {
+          return Promise.reject(error);
+        }
         localStorage.removeItem('token');
         // 跳转到登录页面,并保存当前路径用于登录后返回
-        const currentPath = window.location.pathname;
-        const returnUrl = currentPath !== '/login' ? `?returnUrl=${encodeURIComponent(currentPath)}` : '';
+        const returnUrl = `?returnUrl=${encodeURIComponent(currentPath)}`;
         window.location.href = `/login${returnUrl}`;
       }
     }

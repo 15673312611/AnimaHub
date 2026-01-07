@@ -14,6 +14,8 @@ import api from "@/lib/api";
 import { useToast } from "@/components/ui/toast-provider";
 import { safeAsync } from "@/lib/error-handler";
 import ImageUploader from "./ImageUploader";
+import ModelSelector from "./ModelSelector";
+import { useImageModels } from "@/lib/useImageModels";
 import { wsService } from "@/lib/websocket";
 
 const SCENE_TEMPLATE = `时间:
@@ -48,19 +50,37 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
   // 表单错误状态
   const [errors, setErrors] = useState<{name?: string; prompt?: string; imageUrl?: string}>({});
   
+  // 使用 API 获取图片模型列表
+  const { defaultModel } = useImageModels("project");
+  
   const [formData, setFormData] = useState({
     name: "",
     prompt: "",
-    model: "nano-banana-2-4k",
+    model: "",
     referenceImage: "",
     imageUrl: ""
   });
 
+  // 当模型列表加载完成后，设置默认模型
+  useEffect(() => {
+    if (defaultModel && !formData.model) {
+      setFormData(prev => ({ ...prev, model: defaultModel }));
+    }
+  }, [defaultModel, formData.model]);
+
   useEffect(() => {
     wsService.connect();
     wsService.subscribeToAssets(handleAssetUpdate);
+    
+    // 注册重连回调：WebSocket 重连后刷新素材列表
+    const unsubscribeReconnect = wsService.onReconnect(() => {
+      console.log('🔄 WebSocket 重连，刷新场景列表');
+      onUpdate();
+    });
+    
     return () => {
       wsService.unsubscribeFromAssets();
+      unsubscribeReconnect();
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, []);
@@ -89,7 +109,7 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
   };
 
   const resetForm = () => {
-    setFormData({ name: "", prompt: "", model: "nano-banana-2-4k", referenceImage: "", imageUrl: "" });
+    setFormData({ name: "", prompt: "", model: defaultModel || "", referenceImage: "", imageUrl: "" });
     setSimpleDesc("");
     setErrors({});
   };
@@ -326,18 +346,10 @@ export default function ScenesTab({ projectId, scenes, onUpdate }: ScenesTabProp
                         </div>
                         <div>
                           <Label className="text-sm text-zinc-400 mb-2 block">生成模型</Label>
-                          <Select value={formData.model} onValueChange={(v) => setFormData({...formData, model: v})}>
-                            <SelectTrigger className="bg-zinc-900/30 border-white/10 h-11 rounded-xl">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="bg-zinc-900 border-white/10">
-                              <SelectItem value="nano-banana-2-4k">Nano Banana 2 (4K)</SelectItem>
-                              <SelectItem value="sora_image-vip">Sora Image VIP</SelectItem>
-                              <SelectItem value="doubao-seedream-4-5-251128">豆包 SeeDream 4.5</SelectItem>
-                              <SelectItem value="z-image-turbo">Z-Image Turbo</SelectItem>
-                              <SelectItem value="qwen-image-edit-2509">通义千问图像编辑</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <ModelSelector 
+                            value={formData.model} 
+                            onChange={(v) => setFormData({...formData, model: v})}
+                          />
                         </div>
                         <div>
                           <Label className="flex justify-between items-center text-sm text-zinc-400 mb-2">

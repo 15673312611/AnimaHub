@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast-provider";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // Components
 import CharactersTab from "./components/CharactersTab";
@@ -53,6 +54,7 @@ export default function AnimeProjectPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -135,7 +137,13 @@ export default function AnimeProjectPage() {
   };
 
   const handleDeleteSegment = async (id: number) => {
-    if(!confirm("确定删除此分镜吗？")) return;
+    const confirmed = await confirm({
+      title: "删除片段",
+      description: "确定删除此片段吗？此操作不可恢复。",
+      confirmText: "删除",
+      variant: "danger"
+    });
+    if (!confirmed) return;
     try {
       await api.delete(`/assets/videos/${id}`);
       fetchProject();
@@ -234,7 +242,7 @@ export default function AnimeProjectPage() {
                 <div 
                   key={video.id}
                   className="group bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5 hover:border-purple-500/50 hover:bg-zinc-900 transition-all cursor-pointer relative shadow-sm hover:shadow-md hover:shadow-purple-900/10"
-                  onClick={() => router.push(`/anime-project/${project.id}/fragment/${video.id}`)}
+                  onClick={() => router.push(`/anime-project/${project.id}/storyboard/${video.id}`)}
                 >
                   <div className="aspect-[4/3] bg-gradient-to-br from-zinc-800/50 to-zinc-900/50 flex flex-col items-center justify-center relative group-hover:from-zinc-800 group-hover:to-zinc-800 transition-all">
                      {/* Folder Icon */}
@@ -346,7 +354,7 @@ export default function AnimeProjectPage() {
                      sessionStorage.setItem('useForVideo', JSON.stringify({ imageUrl, prompt }));
                      const firstFragment = project.generatedVideos?.[0];
                      if (firstFragment) {
-                       router.push(`/anime-project/${project.id}/fragment/${firstFragment.id}?useForVideo=1`);
+                       router.push(`/anime-project/${project.id}/storyboard/${firstFragment.id}?useForVideo=1`);
                      } else {
                        toast("请先创建一个片段", "error");
                      }

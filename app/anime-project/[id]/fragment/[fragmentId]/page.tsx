@@ -1,3 +1,16 @@
+/**
+ * ⚠️ 【已弃用 - DEPRECATED】
+ * 此页面已被新的 AI Agent 工作流页面替代
+ * 新页面路径: /anime-project/[id]/fragment/[fragmentId]/ai-agent
+ * 
+ * 弃用原因:
+ * - 扩展性不足
+ * - 交互体验不够专业
+ * - 功能布局不够清晰
+ * 
+ * 请勿修改此文件，所有新功能请在新页面实现
+ */
+
 "use client";
 
 import { useEffect, useState } from "react";

@@ -40,6 +40,8 @@ import { useToast } from "@/components/ui/toast-provider";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import ImageUploader from "./ImageUploader";
 import AssetSelectorDialog from "./AssetSelectorDialog";
+import ModelSelector from "./ModelSelector";
+import { useImageModels } from "@/lib/useImageModels";
 import { safeAsync } from "@/lib/error-handler";
 import { wsService } from "@/lib/websocket";
 import { cn } from "@/lib/utils";
@@ -103,19 +105,37 @@ export default function CompositeTab({
     assets?: boolean;
   }>({});
 
+  // 使用 API 获取图片模型列表
+  const { defaultModel, loading: modelsLoading } = useImageModels("project");
+
   const [formData, setFormData] = useState({
     name: "",
     prompt: "",
-    model: "nano-banana-2-4k",
+    model: "",
     ratio: "16:9",
     imageUrl: "",
   });
 
+  // 当模型列表加载完成后，设置默认模型
+  useEffect(() => {
+    if (!modelsLoading && defaultModel && !formData.model) {
+      setFormData(prev => ({ ...prev, model: defaultModel }));
+    }
+  }, [modelsLoading, defaultModel, formData.model]);
+
   useEffect(() => {
     wsService.connect();
     wsService.subscribeToAssets(handleAssetUpdate);
+    
+    // 注册重连回调：WebSocket 重连后刷新素材列表
+    const unsubscribeReconnect = wsService.onReconnect(() => {
+      console.log('🔄 WebSocket 重连，刷新合成素材列表');
+      onUpdate();
+    });
+    
     return () => {
       wsService.unsubscribeFromAssets();
+      unsubscribeReconnect();
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, []);
@@ -150,7 +170,7 @@ export default function CompositeTab({
     setFormData({
       name: "",
       prompt: "",
-      model: "nano-banana-2-4k",
+      model: defaultModel || "",
       ratio: "16:9",
       imageUrl: "",
     });
@@ -651,27 +671,13 @@ export default function CompositeTab({
                         <Label className="text-sm text-zinc-400 mb-2 block">
                           生成模型
                         </Label>
-                        <Select
+                        <ModelSelector
                           value={formData.model}
-                          onValueChange={(v) =>
+                          onChange={(v) =>
                             setFormData({ ...formData, model: v })
                           }
-                        >
-                          <SelectTrigger className="bg-zinc-900/30 border-white/10 h-11 rounded-xl">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-zinc-900 border-white/10">
-                            <SelectItem value="nano-banana-2-4k">
-                              Nano Banana 2 (4K)
-                            </SelectItem>
-                            <SelectItem value="nano-banana-2-2k">
-                              Nano Banana 2 (2K)
-                            </SelectItem>
-                            <SelectItem value="mj_relax_imagine">
-                              Midjourney (Relax)
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                          className="bg-zinc-900/30 border-white/10 h-11 rounded-xl"
+                        />
                       </div>
                       <div>
                         <Label className="text-sm text-zinc-400 mb-2 block">
