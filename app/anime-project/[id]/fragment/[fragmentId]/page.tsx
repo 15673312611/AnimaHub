@@ -14,7 +14,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import api from "@/lib/api";
 import FragmentEditor from "../../components/FragmentEditor";
 import { useToast } from "@/components/ui/toast-provider";
@@ -35,7 +35,6 @@ interface Project {
 export default function FragmentPage() {
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { toast } = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,23 +61,23 @@ export default function FragmentPage() {
     }
   }, [projectId]);
 
-  // 检查是否有 useForVideo 参数
+  // 检查是否有 useForVideo 参数（避免 useSearchParams 影响静态导出）
   useEffect(() => {
-    const useForVideo = searchParams.get('useForVideo');
-    if (useForVideo === '1') {
-      const stored = sessionStorage.getItem('useForVideo');
+    const useForVideo = new URL(window.location.href).searchParams.get("useForVideo");
+    if (useForVideo === "1") {
+      const stored = sessionStorage.getItem("useForVideo");
       if (stored) {
         try {
           const { imageUrl, prompt } = JSON.parse(stored);
           setInitialRefImage(imageUrl);
           setInitialPrompt(prompt);
-          sessionStorage.removeItem('useForVideo');
+          sessionStorage.removeItem("useForVideo");
         } catch (e) {
-          console.error('Failed to parse useForVideo data', e);
+          console.error("Failed to parse useForVideo data", e);
         }
       }
     }
-  }, [searchParams]);
+  }, []);
 
   if (loading) {
     return (

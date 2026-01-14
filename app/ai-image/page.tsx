@@ -329,24 +329,7 @@ export default function AiImagePage() {
       ? `${userPrompt} ${ratioConfig.suffix}`
       : userPrompt;
 
-    // 立即添加用户消息到列表
-    const userMessageId = `user-${Date.now()}`;
-    const userMessage: ChatMessage = {
-      id: userMessageId,
-      type: 'user',
-      prompt: userPrompt,
-      model: currentModel,
-      ratio: currentRatio,
-      timestamp: Date.now(),
-      referenceImages: currentRefImages.length > 0 ? currentRefImages : undefined,
-    };
-    setMessages(prev => [...prev, userMessage]);
-
-    // 清空输入框和参考图
-    setPrompt("");
-    setReferenceImages([]);
-
-    // 添加助手消息（生成中状态）
+    // 仅添加一条消息：包含提示词 + 生成状态/结果（避免提示词重复显示）
     const assistantMessageId = `assistant-${Date.now()}`;
     const assistantMessage: ChatMessage = {
       id: assistantMessageId,
@@ -359,6 +342,10 @@ export default function AiImagePage() {
       referenceImages: currentRefImages.length > 0 ? currentRefImages : undefined, // 保存参考图
     };
     setMessages(prev => [...prev, assistantMessage]);
+
+    // 清空输入框和参考图
+    setPrompt("");
+    setReferenceImages([]);
 
     try {
       // 过滤掉 base64 格式的图片，只保留 URL
@@ -438,31 +425,37 @@ export default function AiImagePage() {
   };
 
   const loadHistoryItem = (item: any) => {
-    // 将历史记录加载为新的用户消息和助手消息
-    const userMessageId = `user-history-${Date.now()}`;
+    // 将历史记录加载为一条完整的生成记录（避免提示词重复显示）
+    // 额外做一次去重：避免双击/事件重复导致同一条记录被插入两次
+    const normalizedPrompt = item.prompt.replace(/ --ar \\d+:\\d+/, "");
     const assistantMessageId = `assistant-history-${Date.now()}`;
-    
-    const userMessage: ChatMessage = {
-      id: userMessageId,
-      type: 'user',
-      prompt: item.prompt.replace(/ --ar \d+:\d+/, ""),
-      model: item.model,
-      ratio: item.ratio,
-      timestamp: Date.now(),
-    };
     
     const assistantMessage: ChatMessage = {
       id: assistantMessageId,
       type: 'assistant',
       status: 'completed',
       imageUrl: item.imageUrl,
-      prompt: item.prompt.replace(/ --ar \d+:\d+/, ""),
+      prompt: normalizedPrompt,
       model: item.model,
       ratio: item.ratio,
       timestamp: Date.now(),
     };
     
-    setMessages(prev => [...prev, userMessage, assistantMessage]);
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        last.type === 'assistant' &&
+        last.status === 'completed' &&
+        last.imageUrl === assistantMessage.imageUrl &&
+        last.prompt === assistantMessage.prompt &&
+        last.model === assistantMessage.model &&
+        last.ratio === assistantMessage.ratio
+      ) {
+        return prev;
+      }
+      return [...prev, assistantMessage];
+    });
     setHistoryOpen(false);
   };
 

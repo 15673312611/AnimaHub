@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,6 @@ import api from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,12 +18,12 @@ export default function LoginPage() {
   const [returnUrl, setReturnUrl] = useState<string>("/dashboard");
 
   useEffect(() => {
-    // 获取 returnUrl 参数
-    const url = searchParams.get("returnUrl");
+    // 获取 returnUrl 参数（避免 useSearchParams 影响静态导出）
+    const url = new URL(window.location.href).searchParams.get("returnUrl");
     if (url) {
       setReturnUrl(url);
     }
-  }, [searchParams]);
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

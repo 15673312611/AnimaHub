@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   Loader2, 
   Play, 
@@ -415,27 +416,59 @@ export default function SegmentEditor({
       </div>
 
       {/* Asset Pickers */}
-      <AssetPicker 
-        open={charPickerOpen} 
-        onOpenChange={setCharPickerOpen}
-        title="选择角色"
-        assets={characters}
-        onSelect={setSelectedChar}
-      />
-      <AssetPicker 
-        open={scenePickerOpen} 
-        onOpenChange={setScenePickerOpen}
-        title="选择场景"
-        assets={scenes}
-        onSelect={setSelectedScene}
-      />
-      <AssetPicker 
-        open={propPickerOpen} 
-        onOpenChange={setPropPickerOpen}
-        title="选择物品"
-        assets={props}
-        onSelect={setSelectedProp}
-      />
+      <Dialog open={charPickerOpen} onOpenChange={setCharPickerOpen}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white max-w-4xl h-[80vh] flex flex-col p-0">
+          <DialogHeader className="p-4 border-b border-white/10">
+            <DialogTitle>选择角色</DialogTitle>
+          </DialogHeader>
+          <AssetPicker
+            type="char"
+            characters={characters}
+            scenes={scenes}
+            props={props}
+            onSelect={(asset) => {
+              setSelectedChar(asset);
+              setCharPickerOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={scenePickerOpen} onOpenChange={setScenePickerOpen}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white max-w-4xl h-[80vh] flex flex-col p-0">
+          <DialogHeader className="p-4 border-b border-white/10">
+            <DialogTitle>选择场景</DialogTitle>
+          </DialogHeader>
+          <AssetPicker
+            type="scene"
+            characters={characters}
+            scenes={scenes}
+            props={props}
+            onSelect={(asset) => {
+              setSelectedScene(asset);
+              setScenePickerOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={propPickerOpen} onOpenChange={setPropPickerOpen}>
+        <DialogContent className="bg-zinc-950 border-white/10 text-white max-w-4xl h-[80vh] flex flex-col p-0">
+          <DialogHeader className="p-4 border-b border-white/10">
+            <DialogTitle>选择物品</DialogTitle>
+          </DialogHeader>
+          <AssetPicker
+            type="prop"
+            characters={characters}
+            scenes={scenes}
+            props={props}
+            onSelect={(asset) => {
+              setSelectedProp(asset);
+              setPropPickerOpen(false);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

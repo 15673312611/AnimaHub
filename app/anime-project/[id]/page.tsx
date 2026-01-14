@@ -37,6 +37,7 @@ import ScenesTab from "./components/ScenesTab";
 import PropsTab from "./components/PropsTab";
 import EffectsTab from "./components/EffectsTab";
 import CompositeTab from "./components/CompositeTab";
+import ScriptInputModal from "./components/ScriptInputModal";
 
 interface Project {
   id: number;
@@ -66,6 +67,10 @@ export default function AnimeProjectPage() {
   // Create Segment Form
   const [newSegmentName, setNewSegmentName] = useState("");
   const [creatingSegment, setCreatingSegment] = useState(false);
+  
+  // Script Input Modal State
+  const [showScriptInput, setShowScriptInput] = useState(false);
+  const [selectedFragmentId, setSelectedFragmentId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchProject();
@@ -115,21 +120,24 @@ export default function AnimeProjectPage() {
     if (!newSegmentName || !project) return;
     setCreatingSegment(true);
     try {
-      // Create a PENDING video entry as a "Segment" container
-      // Using the correct endpoint: /projects/:id/videos
+      // 注意: 当前系统用 parentId=null 的 GeneratedVideo 作为片段
+      // 最终应该改为使用专门的 Fragment 表
+      // TODO: 后端实现 Fragment API后改为: POST /api/projects/:id/fragments
+      
+      // 不传 startImageUrl 就不会真正创建视频，只创建容器
       await api.post(`/projects/${project.id}/videos`, {
         projectId: project.id,
         name: newSegmentName,
-        description: "New Segment",
-        startImageUrl: "https://placehold.co/1920x1080/png?text=Segment+Start", // Valid placeholder URL
-        generationModel: "veo-3.1",
-        duration: 5
+        description: "片段容器"
+        // 不传 startImageUrl, generationModel 等生成参数
       });
+      
       await fetchProject();
       setShowCreateSegment(false);
       setNewSegmentName("");
-      toast("分镜创建成功", "success");
+      toast("片段创建成功", "success");
     } catch (error: any) {
+      console.error("创建片段失败:", error);
       toast(error.response?.data?.error || "创建失败", "error");
     } finally {
       setCreatingSegment(false);
@@ -150,6 +158,39 @@ export default function AnimeProjectPage() {
       toast("删除成功", "success");
     } catch (e) {
       toast("删除失败", "error");
+    }
+  };
+
+  // 处理片段点击：检查是否有分镜内容
+  const handleSegmentClick = async (fragmentId: number) => {
+    try {
+      // 检查是否存在workflow和分镜
+      const res = await api.get(`/ai-agent/workflows/by-fragment`, {
+        params: { projectId: project?.id, fragmentId }
+      });
+      
+      const workflow = res.data;
+      // 如果有workflow且有分镜内容，直接跳转
+      if (workflow && workflow.shots && workflow.shots.length > 0) {
+        router.push(`/anime-project/${project?.id}/storyboard/${fragmentId}`);
+      } else {
+        // 没有内容，弹出剧本输入框
+        setSelectedFragmentId(fragmentId);
+        setShowScriptInput(true);
+      }
+    } catch (error: any) {
+      // 后端此接口通常不会返回404（不存在时返回 null）
+      // 这里兜底：请求失败则提示错误，不要直接跳转（避免误创建workflow或进入空页面）
+      console.error("加载片段工作流失败:", error);
+      toast("加载片段信息失败，请稍后重试", "error");
+    }
+  };
+
+  // 剧本生成成功后跳转
+  const handleScriptGenerateSuccess = () => {
+    if (!project) return;
+    if (selectedFragmentId !== null) {
+      router.push(`/anime-project/${project.id}/storyboard/${selectedFragmentId}`);
     }
   };
 
@@ -242,7 +283,7 @@ export default function AnimeProjectPage() {
                 <div 
                   key={video.id}
                   className="group bg-zinc-900/50 rounded-xl overflow-hidden border border-white/5 hover:border-purple-500/50 hover:bg-zinc-900 transition-all cursor-pointer relative shadow-sm hover:shadow-md hover:shadow-purple-900/10"
-                  onClick={() => router.push(`/anime-project/${project.id}/storyboard/${video.id}`)}
+                  onClick={() => handleSegmentClick(video.id)}
                 >
                   <div className="aspect-[4/3] bg-gradient-to-br from-zinc-800/50 to-zinc-900/50 flex flex-col items-center justify-center relative group-hover:from-zinc-800 group-hover:to-zinc-800 transition-all">
                      {/* Folder Icon */}
@@ -395,8 +436,17 @@ export default function AnimeProjectPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Script Input Modal */}
+      {selectedFragmentId !== null && (
+        <ScriptInputModal
+          open={showScriptInput}
+          onOpenChange={setShowScriptInput}
+          projectId={project.id}
+          fragmentId={selectedFragmentId}
+          onSuccess={handleScriptGenerateSuccess}
+        />
+      )}
     </div>
   );
 }
-
-

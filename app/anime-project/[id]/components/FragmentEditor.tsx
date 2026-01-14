@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { 
   ArrowLeft, 
   Image as ImageIcon, 
@@ -81,6 +81,11 @@ const RATIOS = [
   { id: "1:1", label: "1:1 方形" },
 ];
 
+const VIDEO_ONLY_RATIOS = [
+  { id: "16:9", label: "16:9 横屏" },
+  { id: "9:16", label: "9:16 竖屏" },
+];
+
 export default function FragmentEditor({
   projectId,
   fragmentId,
@@ -113,12 +118,69 @@ export default function FragmentEditor({
   // 根据 videoMode 获取对应的视频模型列表
   const { models: videoModels, defaultModel: defaultVideoModel, loading: videoModelsLoading } = useVideoModels(videoMode);
   
-  // 当视频模型列表加载完成后，设置默认模型
+  // 当视频模型列表加载完成后：如果当前模型为空或不在列表中，则使用后端默认模型
   useEffect(() => {
-    if (!videoModelsLoading && defaultVideoModel) {
-      setVideoModel(defaultVideoModel);
+    if (videoModelsLoading) return;
+    if (!videoModels || videoModels.length === 0) return;
+
+    const currentValid = !!videoModel && videoModels.some(m => m.value === videoModel);
+    if (currentValid) return;
+
+    setVideoModel(defaultVideoModel || videoModels[0].value);
+  }, [videoModelsLoading, defaultVideoModel, videoModels, videoModel, videoMode]);
+
+  const selectedVideoModelInfo = useMemo(
+    () => videoModels.find(m => m.value === videoModel),
+    [videoModels, videoModel]
+  );
+
+  const videoDurationOptions = useMemo(() => {
+    const list = (selectedVideoModelInfo?.supportedDurations || [])
+      .filter(n => typeof n === "number" && Number.isFinite(n));
+
+    let options: number[] = list.length ? list : [];
+    if (options.length === 0) {
+      const max = selectedVideoModelInfo?.maxDuration;
+      const def = selectedVideoModelInfo?.defaultDuration;
+      const base = [3, 5, 8, 10, 15];
+      options = max ? base.filter(s => s <= max) : base;
+      if (def && !options.includes(def)) options = [def, ...options];
     }
-  }, [videoModelsLoading, defaultVideoModel, videoMode]);
+
+    options = Array.from(new Set(options)).sort((a, b) => a - b);
+    return options.length ? options : [5];
+  }, [selectedVideoModelInfo]);
+
+  const videoRatioOptions = useMemo(() => {
+    const supported = (selectedVideoModelInfo?.supportedRatios || ["16:9", "9:16"])
+      .map(r => (r || "").trim())
+      .filter(r => r === "16:9" || r === "9:16");
+
+    const ids = supported.length ? supported : ["16:9", "9:16"];
+    return VIDEO_ONLY_RATIOS.filter(r => ids.includes(r.id));
+  }, [selectedVideoModelInfo]);
+
+  // 当选择的视频模型变化时，自动校准时长/比例到可选范围
+  useEffect(() => {
+    if (creationMode !== "video") return;
+    if (!videoDurationOptions.length) return;
+    if (videoDurationOptions.includes(duration)) return;
+
+    const def = selectedVideoModelInfo?.defaultDuration;
+    const next = def && videoDurationOptions.includes(def) ? def : videoDurationOptions[0];
+    setDuration(next);
+  }, [creationMode, duration, selectedVideoModelInfo, videoDurationOptions]);
+
+  useEffect(() => {
+    if (creationMode !== "video") return;
+    const ids = videoRatioOptions.map(r => r.id);
+    if (!ids.length) return;
+    if (ids.includes(ratio)) return;
+
+    const def = selectedVideoModelInfo?.defaultRatio;
+    const next = def && ids.includes(def) ? def : ids[0];
+    setRatio(next);
+  }, [creationMode, ratio, selectedVideoModelInfo, videoRatioOptions]);
   
   // 处理从融合图库传入的初始值
   useEffect(() => {
@@ -740,6 +802,7 @@ export default function FragmentEditor({
              description: prompt,
              generationModel: videoModel,
              duration,
+             ratio,
              width: ratio === "9:16" ? 1080 : (ratio === "16:9" ? 1920 : 1080),
              height: ratio === "9:16" ? 1920 : (ratio === "16:9" ? 1080 : 1080),
           };
@@ -1700,12 +1763,14 @@ export default function FragmentEditor({
                      <div className="space-y-2">
                         <Label className="text-[10px] text-zinc-500 uppercase tracking-wider">时长</Label>
                         <div className="flex items-center gap-2 bg-zinc-900 border border-white/10 rounded-md p-1">
-                           {[3, 5, 8, 10].map(s => (
+                           {videoDurationOptions.map(s => (
                              <button 
                                key={s}
                                onClick={() => setDuration(s)}
+                               disabled={videoDurationOptions.length === 1}
                                className={cn(
                                  "flex-1 text-xs py-1 rounded transition-colors",
+                                 videoDurationOptions.length === 1 && "cursor-not-allowed opacity-60",
                                  duration === s ? "bg-zinc-700 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300"
                                )}
                              >
@@ -1720,9 +1785,11 @@ export default function FragmentEditor({
                       <select 
                         value={ratio} 
                         onChange={(e) => setRatio(e.target.value)}
+                        disabled={creationMode === 'video' && videoRatioOptions.length <= 1}
                         className="w-full bg-zinc-900 border border-white/10 rounded-md text-xs py-1.5 px-2 focus:outline-none"
                       >
-                         {RATIOS.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                         {(creationMode === 'video' ? videoRatioOptions : RATIOS)
+                           .map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                       </select>
                    </div>
                 </div>
