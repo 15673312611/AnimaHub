@@ -26,6 +26,9 @@ AnimaHub 是一个集成了多种 AI 能力的动画创作平台，旨在为创�
 
 <img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/d8eefac7-dffc-4d1e-9da4-c2384f0722fe" />
 <img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/18916594-891d-49ba-9604-281d4a86e2bf" />
+<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/6b756172-4c76-4f9d-b900-8ea11e43c127" />
+<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/ecb80571-580b-4555-b7b9-c5e41e8a3ec3" />
+
 
 
 ## ✨ 功能特性
