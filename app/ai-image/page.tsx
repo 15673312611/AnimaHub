@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import api from "@/lib/api";
+import { imageApi } from "@/lib/imageApi";
 import { wsService } from "@/lib/websocket";
 import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 import { useImageModels } from "@/lib/useImageModels";
@@ -187,7 +188,7 @@ export default function AiImagePage() {
     
     const timer = setInterval(async () => {
       try {
-        const res = await api.get(`/images/${taskId}/status`);
+        const res = await imageApi.getStatus(taskId);
         const { status, imageUrl: newImageUrl, errorMessage } = res.data;
         
         if (status === 'COMPLETED' && newImageUrl) {
@@ -237,7 +238,7 @@ export default function AiImagePage() {
   const fetchHistory = async (page: number = 1) => {
     setLoadingHistory(true);
     try {
-      const res = await api.get(`/images/history?page=${page}&pageSize=${historyPageSize}`);
+      const res = await imageApi.getHistory({ page, pageSize: historyPageSize });
       const { data, total, totalPages } = res.data;
       setHistory(data);
       setHistoryTotal(total);
@@ -351,7 +352,7 @@ export default function AiImagePage() {
       // 过滤掉 base64 格式的图片，只保留 URL
       const validImages = currentRefImages.filter(img => !img.startsWith("data:"));
       
-      const res = await api.post("/images/generate", {
+      const res = await imageApi.generate({
         prompt: finalPrompt,
         model: currentModel,
         size: ratioConfig?.size,
