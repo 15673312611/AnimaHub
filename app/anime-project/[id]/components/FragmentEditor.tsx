@@ -252,6 +252,10 @@ export default function FragmentEditor({
   // 使用 API 获取图片模型列表
   const { models: imageModels, defaultModel: defaultImageModel, loading: modelsLoading } = useImageModels("project");
   const [imageModel, setImageModel] = useState<string>("");
+  const selectedImageModelInfo = useMemo(
+    () => imageModels.find(m => m.value === imageModel),
+    [imageModels, imageModel]
+  );
   
   // 当模型列表加载完成后，设置默认模型
   useEffect(() => {
@@ -259,6 +263,13 @@ export default function FragmentEditor({
       setImageModel(defaultImageModel);
     }
   }, [modelsLoading, defaultImageModel, imageModel]);
+
+  // 如果模型代码已被修改，确保选择回落到有效模型
+  useEffect(() => {
+    if (!modelsLoading && imageModels.length > 0 && imageModel && !imageModels.some(m => m.value === imageModel)) {
+      setImageModel(defaultImageModel || imageModels[0].value);
+    }
+  }, [modelsLoading, imageModels, imageModel, defaultImageModel]);
 
   // Loading
   const [generating, setGenerating] = useState(false);
@@ -915,7 +926,8 @@ export default function FragmentEditor({
             projectId,
             name: (imageName && imageName.trim()) ? imageName.trim() : `融合图 - ${new Date().toLocaleTimeString()}`,
             prompt: fusionPrompt,
-            model: imageModel,
+            model: selectedImageModelInfo?.value || imageModel,
+            modelId: selectedImageModelInfo?.id,
             ratio,
             videoId: fragmentId,
             // 传递所有参考图片
@@ -1050,6 +1062,12 @@ export default function FragmentEditor({
         <div className="w-[500px] min-w-[500px] border-r border-white/10 flex flex-col bg-black/40 backdrop-blur-sm">
           {/* Scrollable Content Area */}
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+            {/*
+              剧本导入（LEGACY）：
+              这里的“剧本”指的是 `/scripts`（旧版分镜解析器，包含已解析的镜头/人物/场景）。
+              它不是“剧本工坊”（/script-workshop：AI 生成短剧/多集剧本）。
+              后续如果要接入“剧本工坊 → 一键导入镜头”，请在新模块做适配层，不要直接改 legacy 协议。
+            */}
             {/* 剧本导入按钮 - 最顶部 */}
             <div className="p-5 pb-3">
               <button

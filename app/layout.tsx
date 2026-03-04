@@ -3,7 +3,7 @@ import "./globals.css";
 import ClientLayout from "@/components/ClientLayout";
 
 export const metadata: Metadata = {
-  title: "Anime Sora - AI动漫创作平台",
+  title: "妙笔动画 - AI动漫创作平台",
   description: "AI驱动的专业动漫和商业视频创作系统，基于Sora 2技术",
 };
 

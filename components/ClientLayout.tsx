@@ -24,6 +24,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const isAuthPage = pathname === "/login" || pathname === "/register" || pathname === "/";
   const isProjectPage = pathname?.startsWith("/anime-project/");
+  // Script Workshop: list page uses normal app layout; editor/pipeline use full-screen workbench.
+  const isScriptWorkshopFullScreenPage =
+    pathname?.startsWith("/script-workshop/editor") || pathname?.startsWith("/script-workshop/pipeline");
 
   if (isAuthPage) {
     return (
@@ -36,7 +39,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   }
 
   // 全屏模式页面：隐藏全局侧边栏和顶部导航
-  const isFullScreenPage = isProjectPage;
+  const isFullScreenPage = isProjectPage || isScriptWorkshopFullScreenPage;
 
   return (
     <ToastProvider>

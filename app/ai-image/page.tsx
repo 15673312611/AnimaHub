@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/components/ui/toast-provider";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { Loader2, X, History, FolderPlus, Maximize2, Wand2, Palette, RefreshCw, Plus, LayoutTemplate, Box, ArrowRight, Trash2 } from "lucide-react";
+import { Loader2, X, History, FolderPlus, Maximize2, Wand2, Palette, RefreshCw, Plus, LayoutTemplate, Box, ArrowRight, Trash2, Coins } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import api from "@/lib/api";
 import { imageApi } from "@/lib/imageApi";
+import { coinApi } from "@/lib/coinApi";
 import { wsService } from "@/lib/websocket";
 import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 import { useImageModels } from "@/lib/useImageModels";
@@ -59,6 +60,7 @@ export default function AiImagePage() {
   // 使用 useImageModels hook 获取模型列表
   const { models, defaultModel, loading: modelsLoading, refresh: refreshModels } = useImageModels("ai-image");
   const [model, setModel] = useState<string>("");
+  const selectedModelInfo = models.find(m => m.value === model);
   // 聊天消息列表
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // 改为支持多个参考图
@@ -91,12 +93,23 @@ export default function AiImagePage() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>("public"); // 默认公共素材库
   const [addingToAsset, setAddingToAsset] = useState(false);
 
+  // 漫币状态
+  const [coinBalance, setCoinBalance] = useState<number | null>(null);
+  const [modelPrices, setModelPrices] = useState<Record<string, number>>({});
+
   // 当模型列表加载完成后，设置默认模型
   useEffect(() => {
     if (!modelsLoading && defaultModel && !model) {
       setModel(defaultModel);
     }
   }, [modelsLoading, defaultModel, model]);
+
+  // 如果模型代码已被修改，确保选择回落到有效模型
+  useEffect(() => {
+    if (!modelsLoading && models.length > 0 && model && !models.some(m => m.value === model)) {
+      setModel(defaultModel || models[0].value);
+    }
+  }, [modelsLoading, models, model, defaultModel]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -108,6 +121,7 @@ export default function AiImagePage() {
   useEffect(() => {
     fetchHistory();
     fetchProjects();
+    fetchCoinInfo();
     
     // 连接 WebSocket
     wsService.connect();
@@ -152,6 +166,8 @@ export default function AiImagePage() {
             }
             toast("杰作已诞生", "success");
             fetchHistory();
+            // 刷新漫币余额
+            fetchCoinInfo();
             return { ...msg, status: 'completed', imageUrl: newImageUrl };
           } else if (status === 'FAILED') {
             // 停止该任务的轮询
@@ -199,6 +215,8 @@ export default function AiImagePage() {
           ));
           toast("杰作已诞生", "success");
           fetchHistory();
+          // 刷新漫币余额
+          fetchCoinInfo();
           clearInterval(timer);
           pollingRefs.current.delete(taskId);
         } else if (status === 'FAILED') {
@@ -232,6 +250,25 @@ export default function AiImagePage() {
       // 不再默认选择第一个项目，保持默认为公共素材库
     } catch (err) {
       console.error("Failed to fetch projects", err);
+    }
+  };
+
+  // 获取漫币余额和模型价格
+  const fetchCoinInfo = async () => {
+    try {
+      const [balanceRes, pricingRes] = await Promise.all([
+        coinApi.getBalance(),
+        coinApi.getAllPricing()
+      ]);
+      setCoinBalance(balanceRes.data.balance);
+      // 将价格列表转换为 map
+      const priceMap: Record<string, number> = {};
+      pricingRes.data.forEach((p: any) => {
+        priceMap[p.modelCode] = p.pricePerCall;
+      });
+      setModelPrices(priceMap);
+    } catch (err) {
+      console.error('获取漫币信息失败', err);
     }
   };
 
@@ -323,7 +360,16 @@ export default function AiImagePage() {
     const userPrompt = prompt.trim();
     const currentRatio = ratio;
     const currentModel = model;
+    const currentModelInfo = models.find(m => m.value === currentModel);
+    const currentModelId = currentModelInfo?.id;
     const currentRefImages = [...referenceImages];
+    
+    // 检查漫币余额
+    const currentPrice = modelPrices[currentModelInfo?.value || currentModel] || 0;
+    if (coinBalance !== null && currentPrice > 0 && coinBalance < currentPrice) {
+      toast(`漫币余额不足，需要 ${currentPrice} 漫币，当前余额 ${coinBalance}`, "error");
+      return;
+    }
     
     const ratioConfig = RATIOS.find((r) => r.value === currentRatio);
     const finalPrompt = ratioConfig
@@ -354,7 +400,8 @@ export default function AiImagePage() {
       
       const res = await imageApi.generate({
         prompt: finalPrompt,
-        model: currentModel,
+        model: currentModelInfo?.value || currentModel,
+        modelId: currentModelId,
         size: ratioConfig?.size,
         referenceImages: validImages.length > 0 ? validImages : undefined,
         referenceImage: validImages.length > 0 ? validImages[0] : null,
@@ -392,13 +439,23 @@ export default function AiImagePage() {
       }
     } catch (err: any) {
       console.error("Failed to generate image", err);
+      const errorCode = err.response?.data?.code;
       const errorMsg = err.response?.data?.error || err.response?.data?.message || "生成失败，请重试";
+      
+      // 根据错误码显示更友好的消息
+      let displayMsg = errorMsg;
+      if (errorCode === 'INSUFFICIENT_BALANCE') {
+        displayMsg = errorMsg; // 后端已返回友好消息
+        // 刷新余额
+        fetchCoinInfo();
+      }
+      
       setMessages(prev => prev.map(msg => 
         msg.id === assistantMessageId 
-          ? { ...msg, status: 'failed', errorMessage: errorMsg }
+          ? { ...msg, status: 'failed', errorMessage: displayMsg }
           : msg
       ));
-      toast(errorMsg, "error");
+      toast(displayMsg, "error");
     }
   };
 
@@ -745,6 +802,15 @@ export default function AiImagePage() {
                   
                   {/* Left: Model & Ratio Settings */}
                   <div className="flex items-center gap-2.5">
+                     {/* 当前模型价格 */}
+                     {modelPrices[selectedModelInfo?.value || model] > 0 && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+                           <Coins className="w-3.5 h-3.5 text-amber-400" />
+                           <span className="text-[11px] font-medium text-amber-400">
+                              本次 -{modelPrices[selectedModelInfo?.value || model]}
+                           </span>
+                        </div>
+                     )}
                      {/* Model Selector */}
                      <DropdownMenu open={modelDropdownOpen} onOpenChange={setModelDropdownOpen}>
                         <DropdownMenuTrigger asChild>
@@ -778,7 +844,14 @@ export default function AiImagePage() {
                                     }`}
                                  >
                                     <div className="flex flex-col gap-0.5">
-                                       <span className="text-xs font-medium">{m.label}</span>
+                                       <div className="flex items-center justify-between">
+                                          <span className="text-xs font-medium">{m.label}</span>
+                                          {modelPrices[m.value] > 0 && (
+                                             <span className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                                                <Coins className="w-3 h-3" />{modelPrices[m.value]}
+                                             </span>
+                                          )}
+                                       </div>
                                        <span className="text-[10px] opacity-60">{m.desc}</span>
                                     </div>
                                  </button>
@@ -930,45 +1003,94 @@ export default function AiImagePage() {
                   {history.map((item, index) => (
                      <div 
                        key={item.id} 
-                       className="group relative aspect-square bg-[#0a0a0a] rounded-2xl overflow-hidden border border-white/5 hover:border-amber-500/50 cursor-pointer shadow-lg hover:shadow-amber-500/10 transition-[border-color,box-shadow] duration-200" 
-                       onClick={() => loadHistoryItem(item)}
+                       className={`group relative aspect-square bg-[#0a0a0a] rounded-2xl overflow-hidden border shadow-lg transition-[border-color,box-shadow] duration-200 ${
+                         item.status === 'FAILED' 
+                           ? 'border-red-500/30 hover:border-red-500/50' 
+                           : item.status === 'PENDING' || item.status === 'GENERATING'
+                             ? 'border-amber-500/30 hover:border-amber-500/50'
+                             : 'border-white/5 hover:border-amber-500/50 cursor-pointer hover:shadow-amber-500/10'
+                       }`}
+                       onClick={() => item.status === 'COMPLETED' && loadHistoryItem(item)}
                      >
-                        <OptimizedImage 
-                          src={item.imageUrl} 
-                          alt={item.prompt} 
-                          className="w-full h-full group-hover:scale-105 transition-transform duration-300 ease-out"
-                          objectFit="cover"
-                          priority={index < 6}
-                          placeholder="blur"
-                        />
-                        {/* 删除按钮 - 右上角 */}
-                        <button
-                          onClick={(e) => handleDeleteHistory(item, e)}
-                          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-red-500 text-white border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
-                          title="删除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-4">
-                           <div className="flex items-center gap-2 mb-2">
-                              <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-                                 {item.ratio?.replace(' --ar ', '') || '1:1'}
-                              </span>
-                           </div>
-                           <p className="text-[11px] text-gray-200 line-clamp-2 leading-relaxed mb-3 font-medium">
+                        {/* 根据状态显示不同内容 */}
+                        {item.status === 'PENDING' || item.status === 'GENERATING' ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-amber-500/5 to-transparent">
+                            <div className="relative">
+                              <div className="absolute inset-0 rounded-full blur-lg bg-amber-500/20 animate-pulse"></div>
+                              <div className="relative w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                              </div>
+                            </div>
+                            <span className="text-xs text-amber-400 font-medium">
+                              {item.status === 'PENDING' ? '准备中...' : '生成中...'}
+                            </span>
+                            <p className="text-[10px] text-gray-500 px-4 text-center line-clamp-2">
                               {item.prompt}
-                           </p>
-                           <Button 
-                             size="sm" 
-                             className="w-full h-8 text-xs bg-white text-black hover:bg-gray-200 font-medium border-0"
-                             onClick={(e) => {
-                                e.stopPropagation();
-                                openAddToAssetDialog(item);
-                             }}
-                           >
-                              <FolderPlus className="w-3 h-3 mr-1.5" /> 素材库
-                           </Button>
-                        </div>
+                            </p>
+                          </div>
+                        ) : item.status === 'FAILED' ? (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-red-500/5 to-transparent p-4">
+                            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                              <X className="w-6 h-6 text-red-400" />
+                            </div>
+                            <span className="text-xs text-red-400 font-medium">生成失败</span>
+                            <p className="text-[10px] text-red-400/70 text-center line-clamp-2">
+                              {item.errorMessage || '未知错误'}
+                            </p>
+                            <p className="text-[10px] text-gray-500 text-center line-clamp-1">
+                              {item.prompt}
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <OptimizedImage 
+                              src={item.imageUrl} 
+                              alt={item.prompt} 
+                              className="w-full h-full group-hover:scale-105 transition-transform duration-300 ease-out"
+                              objectFit="cover"
+                              priority={index < 6}
+                              placeholder="blur"
+                            />
+                            {/* 删除按钮 - 右上角 */}
+                            <button
+                              onClick={(e) => handleDeleteHistory(item, e)}
+                              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-red-500 text-white border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
+                              title="删除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-4">
+                               <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                     {item.ratio?.replace(' --ar ', '') || '1:1'}
+                                  </span>
+                               </div>
+                               <p className="text-[11px] text-gray-200 line-clamp-2 leading-relaxed mb-3 font-medium">
+                                  {item.prompt}
+                               </p>
+                               <Button 
+                                 size="sm" 
+                                 className="w-full h-8 text-xs bg-white text-black hover:bg-gray-200 font-medium border-0"
+                                 onClick={(e) => {
+                                    e.stopPropagation();
+                                    openAddToAssetDialog(item);
+                                 }}
+                               >
+                                  <FolderPlus className="w-3 h-3 mr-1.5" /> 素材库
+                               </Button>
+                            </div>
+                          </>
+                        )}
+                        {/* 删除按钮 - 对于失败和生成中的也显示 */}
+                        {(item.status === 'FAILED' || item.status === 'PENDING' || item.status === 'GENERATING') && (
+                          <button
+                            onClick={(e) => handleDeleteHistory(item, e)}
+                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-red-500 text-white border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
+                            title="删除"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                      </div>
                   ))}
                </div>

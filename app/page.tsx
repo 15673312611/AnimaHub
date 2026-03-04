@@ -10,7 +10,7 @@ export default function Home() {
       {/* Navbar */}
       <div className="fixed top-0 w-full z-50 flex justify-between items-center px-8 py-6 backdrop-blur-sm border-b border-white/10">
          <div className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
-            Anime Sora
+            妙笔动画
          </div>
          <div className="flex gap-4">
             <Link href="/login" className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors">

@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone', // 独立部署模式，打包成最小化的 Node.js 服务
   reactStrictMode: false, // 关闭严格模式以提升性能
   
   // 添加空的 turbopack 配置以兼容 Next.js 16

@@ -2,24 +2,27 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useTransition, useCallback, memo } from "react";
+import { useTransition, useCallback, memo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   Plus,
-  Settings, 
-  Film, 
-  LogOut, 
-  BookOpen,
+  Settings,
+  Film,
+  LogOut,
   Coins,
   Image as ImageIcon,
   Library,
-  LucideIcon
+  PenTool,
+  LucideIcon,
 } from "lucide-react";
+import { coinApi } from "@/lib/coinApi";
 
+// NOTE: Legacy storyboard/script *parser* UI lives at `/scripts`.
+// It is intentionally hidden from the sidebar to avoid confusion with the new Script Workshop.
 const navItems = [
   { name: "工作台", href: "/dashboard", icon: LayoutDashboard },
-  { name: "剧本", href: "/scripts", icon: BookOpen },
+  { name: "剧本工坊", href: "/script-workshop", icon: PenTool },
   { name: "公共素材库", href: "/assets", icon: Library },
   { name: "AI 生图", href: "/ai-image", icon: ImageIcon },
   { name: "设置", href: "/settings", icon: Settings },
@@ -60,6 +63,20 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [coinBalance, setCoinBalance] = useState<number | null>(null);
+
+  // 获取漫币余额
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        const res = await coinApi.getBalance();
+        setCoinBalance(res.data.balance);
+      } catch (err) {
+        console.error('获取漫币余额失败', err);
+      }
+    };
+    fetchBalance();
+  }, []);
 
   // 使用 startTransition 包裹导航，让 UI 保持响应
   const handleNavigation = useCallback((href: string) => {
@@ -81,7 +98,7 @@ export function Sidebar() {
           <div className="w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center">
             <Film className="w-5 h-5 fill-current" />
           </div>
-          <span>AnimaHub</span>
+          <span>妙笔动画</span>
         </div>
       </div>
 
@@ -110,27 +127,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
-      {/* User Profile / Bottom Section */}
-      <div className="p-4 border-t border-white/5 bg-black/20">
-        <div className="flex items-center gap-3 mb-3 px-2">
-          <div className="w-8 h-8 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-xs font-bold text-white">
-            U
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <div className="text-sm font-medium text-white truncate">创作者</div>
-            <div className="flex items-center gap-1 text-xs text-zinc-500">
-              <Coins className="w-3 h-3" /> 100 积分
-            </div>
-          </div>
-        </div>
-        <button 
-          onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
-          <LogOut className="w-3 h-3" /> 退出登录
-        </button>
-      </div>
     </div>
   );
 }

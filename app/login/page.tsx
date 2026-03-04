@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import api from "@/lib/api";
 
 export default function LoginPage() {
@@ -18,7 +17,6 @@ export default function LoginPage() {
   const [returnUrl, setReturnUrl] = useState<string>("/dashboard");
 
   useEffect(() => {
-    // 获取 returnUrl 参数（避免 useSearchParams 影响静态导出）
     const url = new URL(window.location.href).searchParams.get("returnUrl");
     if (url) {
       setReturnUrl(url);
@@ -33,30 +31,34 @@ export default function LoginPage() {
     try {
       const res = await api.post("/auth/login", { username, password });
       localStorage.setItem("token", res.data.token);
-      // 登录成功后跳转到原来的页面或默认的 dashboard
       router.push(returnUrl);
     } catch (err: any) {
-      setError(err.response?.data?.error || "登录失败，请检查您的邮箱和密码");
+      setError(err.response?.data?.error || "登录失败，请检查账号和密码");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-black text-white p-4 relative overflow-hidden">
-      {/* Background Glow */}
-      <div className="absolute top-[-200px] left-[-200px] w-[500px] h-[500px] bg-purple-900/30 blur-[100px] rounded-full pointer-events-none"></div>
-      <div className="absolute bottom-[-200px] right-[-200px] w-[500px] h-[500px] bg-blue-900/20 blur-[100px] rounded-full pointer-events-none"></div>
+    <div className="relative min-h-screen overflow-hidden bg-black text-slate-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(147,51,234,0.26),transparent_42%),radial-gradient(circle_at_80%_82%,rgba(236,72,153,0.2),transparent_45%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(125deg,rgba(76,29,149,0.28),transparent_40%),linear-gradient(300deg,rgba(192,38,211,0.12),transparent_50%)]" />
 
-      <Card className="w-full max-w-md bg-white/5 border-white/10 text-white relative z-10 backdrop-blur-sm">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight">欢迎回来</CardTitle>
-          <CardDescription className="text-gray-400">输入您的邮箱和密码登录 Anime Sora</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-md items-center px-4 py-8">
+        <section className="w-full rounded-2xl border border-purple-300/20 bg-[#0f0d1f]/92 p-7 shadow-[0_20px_80px_rgba(120,40,200,0.25)] sm:p-8">
+          <div className="mb-8 text-center">
+            <p className="mx-auto mb-3 inline-flex rounded-full border border-purple-300/30 bg-purple-400/10 px-3 py-1 text-xs text-purple-200">
+              妙笔动画
+            </p>
+            <h2 className="text-3xl font-bold text-white">账号登录</h2>
+            <p className="mt-2 text-sm text-slate-300">请输入账号和密码登录系统</p>
+          </div>
+
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-gray-300">账号</Label>
+              <Label htmlFor="username" className="text-slate-200">
+                账号
+              </Label>
               <Input
                 id="username"
                 type="text"
@@ -64,38 +66,46 @@ export default function LoginPage() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="bg-black/30 border-white/10 focus-visible:ring-purple-500"
+                className="h-11 border-purple-400/25 bg-[#15122c] text-slate-100 placeholder:text-slate-400 focus-visible:ring-purple-400"
               />
             </div>
+
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-gray-300">密码</Label>
-                <Link href="#" className="text-xs text-purple-400 hover:text-purple-300">忘记密码?</Link>
-              </div>
+              <Label htmlFor="password" className="text-slate-200">
+                密码
+              </Label>
               <Input
                 id="password"
                 type="password"
+                placeholder="请输入密码"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-black/30 border-white/10 focus-visible:ring-purple-500"
+                className="h-11 border-purple-400/25 bg-[#15122c] text-slate-100 placeholder:text-slate-400 focus-visible:ring-purple-400"
               />
             </div>
-            {error && <p className="text-sm text-red-400 bg-red-900/20 p-2 rounded text-center">{error}</p>}
-            <Button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold" disabled={loading}>
-              {loading ? "正在登录..." : "立即登录"}
+
+            {error && (
+              <p className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-center text-sm text-red-300">{error}</p>
+            )}
+
+            <Button
+              type="submit"
+              className="h-11 w-full bg-gradient-to-r from-purple-600 to-fuchsia-500 text-white hover:from-purple-500 hover:to-fuchsia-400"
+              disabled={loading}
+            >
+              {loading ? "登录中..." : "登录"}
             </Button>
           </form>
-        </CardContent>
-        <CardFooter className="flex justify-center border-t border-white/10 pt-6">
-          <p className="text-sm text-gray-400">
-            还没有账号?{" "}
-            <Link href="/register" className="text-purple-400 hover:text-purple-300 font-medium hover:underline">
-              免费注册
+
+          <div className="mt-6 border-t border-white/10 pt-4 text-center text-sm text-slate-300">
+            还没有账号？{" "}
+            <Link href="/register" className="font-medium text-purple-300 hover:text-purple-200">
+              立即注册
             </Link>
-          </p>
-        </CardFooter>
-      </Card>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
