@@ -3,12 +3,14 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import api from "@/lib/api";
+import api, { getApiBaseUrl } from "@/lib/api";
 
 export default function TestAuthPage() {
   const [token, setToken] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const apiBaseUrl = getApiBaseUrl();
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
 
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
@@ -119,8 +121,8 @@ export default function TestAuthPage() {
             <div className="pt-4 border-t border-white/10">
               <h3 className="text-sm font-medium text-zinc-400 mb-2">调试信息:</h3>
               <div className="space-y-1 text-xs text-zinc-500">
-                <p>• API Base URL: http://localhost:3001/api</p>
-                <p>• 前端地址: http://localhost:3000</p>
+                <p>• API Base URL: {apiBaseUrl}</p>
+                <p>• 前端地址: {currentOrigin}</p>
                 <p>• Token 存储位置: localStorage</p>
               </div>
             </div>

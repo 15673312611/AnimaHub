@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(docker:*)",
+      "Bash(npm:*)",
+      "Bash(node:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)"
+    ]
+  }
+}

@@ -1,27 +1,39 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Film, LogOut, User, Loader2, Coins, RefreshCw, CreditCard, MessageCircle, UserPlus, X, Copy, Check, Sparkles, Zap, KeyRound } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  Coins,
+  Copy,
+  CreditCard,
+  KeyRound,
+  Loader2,
+  LogOut,
+  MessageCircle,
+  PenTool,
+  RefreshCw,
+  UserPlus,
+} from "lucide-react";
 import api from "@/lib/api";
 import NotificationBell from "./NotificationBell";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 interface UserProfile {
@@ -39,61 +51,145 @@ interface RechargePackage {
   tag?: string;
 }
 
+interface PaymentMethod {
+  code: string;
+  label: string;
+  enabled: boolean;
+}
+
+interface PaymentConfig {
+  enabled: boolean;
+  provider: string;
+  defaultMethod: string;
+  methods: PaymentMethod[];
+}
+
+interface ContactConfig {
+  wechatQrcodeUrl: string;
+  wechatId: string;
+}
+
+const PAYMENT_LABELS: Record<string, string> = {
+  alipay: "支付宝",
+  wxpay: "微信支付",
+  qqpay: "QQ钱包",
+};
+
 export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
+
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [showWechatDialog, setShowWechatDialog] = useState(false);
   const [showRechargeDialog, setShowRechargeDialog] = useState(false);
+
   const [cardKey, setCardKey] = useState("");
   const [recharging, setRecharging] = useState(false);
   const [copiedWechat, setCopiedWechat] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+
+  const [rechargeTab, setRechargeTab] = useState<"packages" | "cardkey">("packages");
   const [rechargePackages, setRechargePackages] = useState<RechargePackage[]>([]);
-  const [rechargeTab, setRechargeTab] = useState<'packages' | 'cardkey'>('packages');
-  const [contactConfig, setContactConfig] = useState<{ wechatQrcodeUrl: string; wechatId: string }>({ wechatQrcodeUrl: '', wechatId: '' });
+  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
 
-  const fetchContactConfig = async () => {
-    try {
-      const response = await api.get("/config/contact");
-      setContactConfig(response.data);
-    } catch (error) {
-      console.error("获取客服配置失败", error);
-    }
-  };
+  const [contactConfig, setContactConfig] = useState<ContactConfig>({
+    wechatQrcodeUrl: "",
+    wechatId: "",
+  });
 
-  const fetchRechargePackages = async () => {
-    try {
-      const response = await api.get("/config/recharge-packages");
-      setRechargePackages(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error("获取充值套餐失败", error);
-    }
-  };
+  const [paymentConfig, setPaymentConfig] = useState<PaymentConfig>({
+    enabled: false,
+    provider: "yizf",
+    defaultMethod: "alipay",
+    methods: [],
+  });
+  const [selectedPaymentType, setSelectedPaymentType] = useState("alipay");
+  const [paying, setPaying] = useState(false);
+  const [pollingOrderNo, setPollingOrderNo] = useState<string | null>(null);
 
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      fetchUserProfile();
-    } else {
-      setLoading(false);
-    }
-    fetchRechargePackages();
-    fetchContactConfig();
-  }, []);
-
-  const fetchUserProfile = async () => {
+  const fetchUserProfile = useCallback(async () => {
     try {
       const response = await api.get("/user/profile");
       setUser(response.data);
     } catch (error) {
-      console.error("获取用户信息失败", error);
+      console.error("Failed to fetch user profile", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const fetchContactConfig = useCallback(async () => {
+    try {
+      const response = await api.get("/config/contact");
+      setContactConfig({
+        wechatQrcodeUrl: response.data?.wechatQrcodeUrl || "",
+        wechatId: response.data?.wechatId || "",
+      });
+    } catch (error) {
+      console.error("Failed to fetch contact config", error);
+    }
+  }, []);
+
+  const fetchRechargePackages = useCallback(async () => {
+    try {
+      const response = await api.get("/config/recharge-packages");
+      setRechargePackages(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error("Failed to fetch recharge packages", error);
+      setRechargePackages([]);
+    }
+  }, []);
+
+  const fetchPaymentConfig = useCallback(async () => {
+    try {
+      const response = await api.get("/config/payment");
+      const data = response.data || {};
+      const rawMethods = Array.isArray(data.methods) ? data.methods : [];
+      const methods: PaymentMethod[] = rawMethods
+        .filter((m: any) => m && m.enabled)
+        .map((m: any) => ({
+          code: String(m.code || ""),
+          label: String(m.label || PAYMENT_LABELS[String(m.code || "")] || String(m.code || "")),
+          enabled: Boolean(m.enabled),
+        }))
+        .filter((m: PaymentMethod) => Boolean(m.code));
+
+      const fallbackMethod = methods[0]?.code || "alipay";
+      const requestedDefault = String(data.defaultMethod || "");
+      const defaultMethod = methods.some((m) => m.code === requestedDefault) ? requestedDefault : fallbackMethod;
+
+      setPaymentConfig({
+        enabled: Boolean(data.enabled),
+        provider: String(data.provider || "yizf"),
+        defaultMethod,
+        methods,
+      });
+      setSelectedPaymentType(defaultMethod);
+    } catch (error) {
+      console.error("Failed to fetch payment config", error);
+      setPaymentConfig({
+        enabled: false,
+        provider: "yizf",
+        defaultMethod: "alipay",
+        methods: [],
+      });
+      setSelectedPaymentType("alipay");
+    }
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    fetchUserProfile();
+    fetchRechargePackages();
+    fetchContactConfig();
+    fetchPaymentConfig();
+  }, [fetchUserProfile, fetchRechargePackages, fetchContactConfig, fetchPaymentConfig]);
 
   const handleRefreshBalance = useCallback(async () => {
     if (refreshing) return;
@@ -102,15 +198,15 @@ export default function Navbar() {
       const response = await api.get("/user/profile");
       setUser(response.data);
     } catch (error) {
-      console.error("刷新余额失败", error);
+      console.error("Failed to refresh balance", error);
     } finally {
       setRefreshing(false);
     }
   }, [refreshing]);
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    router.push('/login');
+    localStorage.removeItem("token");
+    router.push("/login");
   };
 
   const handleCardKeyRecharge = async () => {
@@ -118,106 +214,194 @@ export default function Navbar() {
       alert("请输入卡密");
       return;
     }
+
     setRecharging(true);
     try {
       const response = await api.post("/user/recharge", { cardKey: cardKey.trim() });
-      alert(`充值成功！充值 ${response.data.coins || ''} 漫币`);
+      alert(`充值成功，获得 ${response.data?.coins || 0} 漫币`);
       setCardKey("");
-      // 刷新余额
       await handleRefreshBalance();
     } catch (error: any) {
-      const message = error.response?.data?.error || "卡密无效或已使用";
+      const message = error?.response?.data?.error || "卡密无效或已被使用";
       alert(message);
     } finally {
       setRecharging(false);
     }
   };
 
-  const handleCopyWechat = () => {
-    navigator.clipboard.writeText(contactConfig.wechatId || "");
-    setCopiedWechat(true);
-    setTimeout(() => setCopiedWechat(false), 2000);
+  const handleOnlineRecharge = async () => {
+    if (!selectedPackage) {
+      alert("请先选择套餐");
+      return;
+    }
+    if (!paymentConfig.enabled) {
+      alert("在线支付已关闭");
+      return;
+    }
+    if (!selectedPaymentType) {
+      alert("请先选择支付方式");
+      return;
+    }
+
+    setPaying(true);
+    try {
+      const response = await api.post("/payments/orders", {
+        packageId: selectedPackage,
+        paymentType: selectedPaymentType,
+      });
+
+      const data = response.data || {};
+      const orderNo = data.orderNo;
+      const payTarget = data.payUrl || data.qrcode || data.urlscheme;
+
+      if (!orderNo) {
+        throw new Error("orderNo missing");
+      }
+
+      setPollingOrderNo(orderNo);
+
+      if (typeof payTarget === "string" && payTarget.length > 0) {
+        if (payTarget.startsWith("http://") || payTarget.startsWith("https://")) {
+          window.open(payTarget, "_blank", "noopener,noreferrer");
+        } else {
+          window.location.href = payTarget;
+        }
+      } else {
+        alert("订单已创建，请在支付平台完成支付。");
+      }
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || "创建支付订单失败";
+      alert(message);
+    } finally {
+      setPaying(false);
+    }
   };
 
-  if (pathname === '/' || pathname === '/login' || pathname === '/register') {
-    return null;
-  }
+  useEffect(() => {
+    if (!pollingOrderNo) return;
+
+    let stopped = false;
+    const startedAt = Date.now();
+
+    const timer = setInterval(async () => {
+      if (stopped) return;
+      try {
+        const response = await api.get(`/payments/orders/${pollingOrderNo}`);
+        const status = response.data?.status;
+        if (status === "PAID") {
+          stopped = true;
+          clearInterval(timer);
+          setPollingOrderNo(null);
+          alert("支付成功，漫币已到账。");
+          await handleRefreshBalance();
+          setShowRechargeDialog(false);
+          setSelectedPackage(null);
+          return;
+        }
+
+        if (Date.now() - startedAt > 3 * 60 * 1000) {
+          stopped = true;
+          clearInterval(timer);
+          setPollingOrderNo(null);
+        }
+      } catch {
+        // ignore transient polling errors
+      }
+    }, 3000);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [pollingOrderNo, handleRefreshBalance]);
+
+  const handleCopyWechat = async () => {
+    if (!contactConfig.wechatId) return;
+    try {
+      await navigator.clipboard.writeText(contactConfig.wechatId);
+      setCopiedWechat(true);
+      setTimeout(() => setCopiedWechat(false), 1500);
+    } catch (error) {
+      console.error("Failed to copy WeChat id", error);
+    }
+  };
+
+  const selectedPackageInfo = useMemo(
+    () => rechargePackages.find((pkg) => pkg.id === selectedPackage) || null,
+    [rechargePackages, selectedPackage]
+  );
+
+  const hideNavbar =
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/pay-result";
+  if (hideNavbar) return null;
 
   return (
     <>
-      <nav className="border-b border-white/10 bg-black/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-8">
-            <Link href="/dashboard" className="flex items-center gap-2 text-xl font-bold">
-              <Film className="w-6 h-6 text-purple-500" />
-              <span className="bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
-                妙笔动画
-              </span>
-            </Link>
-          </div>
+      <nav className="sticky top-0 z-40 border-b border-[#242634] bg-[linear-gradient(180deg,rgba(4,6,12,0.96),rgba(5,8,14,0.78))] backdrop-blur-xl">
+        <div className="flex items-center justify-between px-5 py-2.5 sm:px-6">
+          <Link href="/dashboard" className="flex items-center gap-2.5 text-base font-semibold">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md border border-purple-400/35 bg-purple-500/12">
+              <PenTool className="h-3.5 w-3.5 text-purple-300" />
+            </div>
+            <span className="bg-gradient-to-r from-[#df7dff] to-[#ff53cb] bg-clip-text text-transparent">妙笔动画</span>
+          </Link>
 
           <div className="flex items-center gap-3">
             {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+              <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             ) : user ? (
               <>
-                {/* 漫币显示 + 刷新 + 充值 */}
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
-                  <Coins className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-zinc-200">
-                    {user.credits}
-                  </span>
+                <div className="hidden items-center gap-2 rounded-full border border-[#35364b] bg-[#0f1320]/95 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:flex">
+                  <Coins className="h-4 w-4 text-purple-300" />
+                  <span className="text-sm font-medium text-zinc-200">{user.credits}</span>
                   <span className="text-xs text-zinc-500">漫币</span>
                   <button
                     onClick={handleRefreshBalance}
                     disabled={refreshing}
-                    className="ml-1 p-0.5 rounded-full hover:bg-white/10 transition-colors disabled:opacity-50"
+                    className="ml-1 rounded-full p-0.5 transition-colors hover:bg-white/10 disabled:opacity-50"
                     title="刷新余额"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 text-zinc-400 ${refreshing ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-3.5 w-3.5 text-zinc-400 ${refreshing ? "animate-spin" : ""}`} />
                   </button>
                 </div>
 
-                {/* 充值按钮 */}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowRechargeDialog(true)}
-                  className="hidden sm:flex items-center gap-1.5 text-purple-400 hover:text-purple-300 hover:bg-purple-500/10 border border-purple-500/30 rounded-full px-3 py-1.5 h-auto"
+                  onClick={() => {
+                    setShowRechargeDialog(true);
+                    setRechargeTab("packages");
+                    setSelectedPackage(null);
+                    setPollingOrderNo(null);
+                    const method = paymentConfig.defaultMethod || paymentConfig.methods[0]?.code || "alipay";
+                    setSelectedPaymentType(method);
+                  }}
+                  className="hidden h-auto items-center gap-1.5 rounded-full border border-purple-500/35 bg-purple-500/5 px-3 py-1.5 text-purple-300 hover:bg-purple-500/12 hover:text-purple-200 sm:flex"
                 >
-                  <CreditCard className="w-4 h-4" />
+                  <CreditCard className="h-4 w-4" />
                   <span className="text-sm">充值</span>
                 </Button>
 
-                {/* 消息通知 */}
                 <NotificationBell />
 
-                {/* 用户头像下拉菜单 */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 transition-all shadow-lg shadow-purple-500/20 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black">
-                      <span className="text-sm font-bold text-white">
-                        {user.username?.charAt(0).toUpperCase()}
-                      </span>
+                    <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#cf4bff] to-[#ff4eb2] text-sm font-bold text-white shadow-lg shadow-purple-500/25 transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-black">
+                      {user.username?.charAt(0).toUpperCase()}
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuLabel className="text-gray-400">
-                      {user.username}
-                    </DropdownMenuLabel>
+                    <DropdownMenuLabel className="text-gray-400">{user.username}</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="cursor-pointer gap-2"
-                      onClick={() => setShowWechatDialog(true)}
-                    >
-                      <MessageCircle className="w-4 h-4 text-green-400" />
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => setShowWechatDialog(true)}>
+                      <MessageCircle className="h-4 w-4 text-green-400" />
                       联系客服
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="cursor-pointer gap-2"
-                      onClick={() => router.push('/settings')}
-                    >
-                      <UserPlus className="w-4 h-4 text-blue-400" />
+                    <DropdownMenuItem className="cursor-pointer gap-2" onClick={() => router.push("/settings")}>
+                      <UserPlus className="h-4 w-4 text-blue-400" />
                       账号设置
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -225,7 +409,7 @@ export default function Navbar() {
                       className="cursor-pointer gap-2 text-red-400 focus:text-red-400"
                       onClick={handleLogout}
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="h-4 w-4" />
                       退出登录
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -236,241 +420,235 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* 联系客服弹窗 - 微信二维码 */}
       <Dialog open={showWechatDialog} onOpenChange={setShowWechatDialog}>
-        <DialogContent className="bg-zinc-900 border-zinc-700 text-white max-w-sm">
+        <DialogContent className="max-w-sm border-zinc-700 bg-zinc-900 text-white">
           <DialogHeader>
             <DialogTitle className="text-center text-lg">联系客服</DialogTitle>
             <DialogDescription className="text-center text-gray-400">
-              扫描二维码或添加微信联系我们
+              扫描二维码或复制微信号联系客服
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
-            {contactConfig.wechatQrcodeUrl && (
-              <div className="w-48 h-48 rounded-lg overflow-hidden border border-white/10">
+          <div className="flex flex-col items-center gap-4 py-2">
+            {contactConfig.wechatQrcodeUrl ? (
+              <div className="h-48 w-48 overflow-hidden rounded-lg border border-white/10">
                 <img
                   src={contactConfig.wechatQrcodeUrl}
                   alt="客服微信二维码"
-                  className="w-full h-full object-cover"
+                  className="h-full w-full object-cover"
                 />
               </div>
-            )}
-            {contactConfig.wechatId && (
-            <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/10">
-              <span className="text-gray-400 text-sm">微信号：</span>
-              <span className="text-white font-medium">{contactConfig.wechatId}</span>
-              <button
-                onClick={handleCopyWechat}
-                className="ml-2 p-1 rounded hover:bg-white/10 transition-colors"
-                title="复制微信号"
-              >
-                {copiedWechat ? (
-                  <Check className="w-4 h-4 text-green-400" />
-                ) : (
-                  <Copy className="w-4 h-4 text-gray-400" />
-                )}
-              </button>
-            </div>
-            )}
+            ) : null}
+            {contactConfig.wechatId ? (
+              <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2">
+                <span className="text-sm text-gray-400">微信号:</span>
+                <span className="font-medium text-white">{contactConfig.wechatId}</span>
+                <button
+                  onClick={handleCopyWechat}
+                  className="ml-1 rounded p-1 transition-colors hover:bg-white/10"
+                  title="复制微信号"
+                >
+                  {copiedWechat ? (
+                    <Check className="h-4 w-4 text-green-400" />
+                  ) : (
+                    <Copy className="h-4 w-4 text-gray-400" />
+                  )}
+                </button>
+              </div>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* 充值弹窗 */}
-      <Dialog open={showRechargeDialog} onOpenChange={(open) => { setShowRechargeDialog(open); if (!open) { setSelectedPackage(null); setRechargeTab('packages'); } }}>
-        <DialogContent className="bg-[#0e0e12] border-white/[0.1] text-white max-w-2xl w-[95vw] p-0 overflow-hidden gap-0 rounded-2xl [&>button]:text-zinc-500 [&>button]:hover:text-white [&>button]:z-20">
+      <Dialog
+        open={showRechargeDialog}
+        onOpenChange={(open) => {
+          setShowRechargeDialog(open);
+          if (!open) {
+            setSelectedPackage(null);
+            setRechargeTab("packages");
+            setPollingOrderNo(null);
+          }
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-2xl gap-0 overflow-hidden rounded-2xl border-white/10 bg-[#0e0e12] p-0 text-white">
           <DialogHeader className="sr-only">
             <DialogTitle>漫币充值</DialogTitle>
-            <DialogDescription>选择套餐或使用卡密充值</DialogDescription>
+            <DialogDescription>选择充值套餐或使用卡密兑换</DialogDescription>
           </DialogHeader>
 
-          {/* ====== Hero 头部 ====== */}
-          <div className="relative overflow-hidden">
-            {/* Mesh 渐变背景 */}
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-600/25 via-purple-900/10 to-pink-500/15" />
-            <div className="absolute top-0 right-0 w-72 h-72 bg-purple-500/20 rounded-full blur-[80px] -translate-y-1/2 translate-x-1/3" />
-            <div className="absolute bottom-0 left-0 w-56 h-56 bg-pink-500/15 rounded-full blur-[60px] translate-y-1/2 -translate-x-1/4" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 bg-blue-500/8 rounded-full blur-[50px]" />
-            {/* 网格纹理 */}
-            <div className="absolute inset-0 opacity-[0.04]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-
-            <div className="relative px-8 pt-10 pb-8">
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-xs font-medium text-purple-300/80 uppercase tracking-widest mb-3">我的账户</p>
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-5xl font-extrabold tracking-tight text-white">
-                      {user?.credits?.toLocaleString() ?? 0}
-                    </span>
-                    <span className="text-base font-medium text-zinc-400">漫币</span>
-                  </div>
-                </div>
-                <button
-                  onClick={handleRefreshBalance}
-                  disabled={refreshing}
-                  className="mb-2 w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-40 backdrop-blur-sm"
-                >
-                  <RefreshCw className={`w-4 h-4 text-zinc-400 ${refreshing ? 'animate-spin' : ''}`} />
-                </button>
+          <div className="px-6 pb-4 pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-widest text-purple-300/80">我的余额</p>
+                <p className="mt-2 text-3xl font-bold text-white">{user?.credits?.toLocaleString() || 0} 漫币</p>
               </div>
+              <button
+                onClick={handleRefreshBalance}
+                disabled={refreshing}
+                className="rounded-lg border border-white/10 bg-white/5 p-2 transition-colors hover:bg-white/10 disabled:opacity-50"
+                title="刷新余额"
+              >
+                <RefreshCw className={`h-4 w-4 text-zinc-400 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
             </div>
           </div>
 
-          {/* ====== Tab 栏 ====== */}
-          <div className="px-8 flex gap-6 border-b border-white/[0.08]">
+          <div className="flex gap-6 border-b border-white/10 px-6">
             <button
-              onClick={() => setRechargeTab('packages')}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                rechargeTab === 'packages' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
+              onClick={() => setRechargeTab("packages")}
+              className={`relative pb-3 text-sm font-medium ${
+                rechargeTab === "packages" ? "text-white" : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
               套餐充值
-              {rechargeTab === 'packages' && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500" />
-              )}
+              {rechargeTab === "packages" ? (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500" />
+              ) : null}
             </button>
             <button
-              onClick={() => setRechargeTab('cardkey')}
-              className={`pb-3 text-sm font-medium transition-all relative ${
-                rechargeTab === 'cardkey' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'
+              onClick={() => setRechargeTab("cardkey")}
+              className={`relative pb-3 text-sm font-medium ${
+                rechargeTab === "cardkey" ? "text-white" : "text-zinc-500 hover:text-zinc-300"
               }`}
             >
               卡密兑换
-              {rechargeTab === 'cardkey' && (
-                <span className="absolute bottom-0 inset-x-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500" />
-              )}
+              {rechargeTab === "cardkey" ? (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500" />
+              ) : null}
             </button>
           </div>
 
-          {/* ====== 套餐充值 Tab ====== */}
-          {rechargeTab === 'packages' && (
-            <div className="p-8 space-y-6">
-              {/* 3 列套餐网格 */}
-              <div className="grid grid-cols-3 gap-3">
-                {rechargePackages.map((pkg) => {
-                  const isSelected = selectedPackage === pkg.id;
-                  return (
-                    <button
-                      key={pkg.id}
-                      onClick={() => setSelectedPackage(isSelected ? null : pkg.id)}
-                      className={`relative group rounded-2xl p-5 text-left transition-all duration-200 border ${
-                        isSelected
-                          ? 'bg-purple-500/[0.1] border-purple-500/50 ring-1 ring-purple-500/25 shadow-[0_0_40px_-8px_rgba(168,85,247,0.2)]'
-                          : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.06] hover:border-white/[0.15]'
-                      }`}
-                    >
-                      {/* 标签 */}
-                      {pkg.tag && (
-                        <span className="absolute -top-2.5 right-4 px-2.5 py-0.5 text-[10px] font-semibold rounded-full bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/25">
-                          {pkg.tag}
-                        </span>
-                      )}
-
-                      {/* 套餐名 */}
-                      <div className="text-xs text-zinc-400 font-medium">{pkg.label}</div>
-
-                      {/* 漫币数 */}
-                      <div className="mt-3 mb-4">
-                        <span className={`text-3xl font-extrabold tabular-nums tracking-tight ${
-                          isSelected ? 'text-white' : 'text-zinc-100 group-hover:text-white'
-                        } transition-colors`}>
-                          {pkg.coins.toLocaleString()}
-                        </span>
-                        <span className="text-xs text-zinc-500 ml-1.5">漫币</span>
-                      </div>
-
-                      {/* 价格区 */}
-                      <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between">
-                        <span className={`text-base font-bold ${
-                          isSelected ? 'text-purple-400' : 'text-zinc-200'
-                        } transition-colors`}>¥{pkg.price}</span>
-                        <span className="text-[10px] text-zinc-500">¥{(pkg.price / pkg.coins).toFixed(3)}/币</span>
-                      </div>
-
-                      {/* 选中指示 */}
-                      {isSelected && (
-                        <div className="absolute top-3 left-3">
-                          <div className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
-                            <Check className="w-3 h-3 text-white" strokeWidth={3} />
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* 底部操作栏 */}
-              {selectedPackage ? (
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
-                  {(() => {
-                    const pkg = rechargePackages.find(p => p.id === selectedPackage);
-                    if (!pkg) return null;
+          {rechargeTab === "packages" ? (
+            <div className="space-y-5 p-6">
+              {rechargePackages.length > 0 ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {rechargePackages.map((pkg) => {
+                    const isSelected = selectedPackage === pkg.id;
                     return (
-                      <>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm text-zinc-300">已选择</span>
-                          <div className="flex items-baseline gap-2 mt-0.5">
-                            <span className="text-lg font-bold text-white">{pkg.label}</span>
-                            <span className="text-sm text-zinc-400">{pkg.coins.toLocaleString()} 漫币</span>
-                          </div>
-                        </div>
-                        <div className="text-right mr-2">
-                          <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">¥{pkg.price}</span>
-                        </div>
-                        <button
-                          onClick={() => setShowWechatDialog(true)}
-                          className="flex-shrink-0 px-6 py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm transition-all active:scale-[0.97] flex items-center gap-2 shadow-lg shadow-purple-500/25"
-                        >
-                          <MessageCircle className="w-4 h-4" />
-                          联系客服购买
-                        </button>
-                      </>
+                      <button
+                        key={pkg.id}
+                        onClick={() => setSelectedPackage(isSelected ? null : pkg.id)}
+                        className={`relative rounded-xl border p-4 text-left transition-all ${
+                          isSelected
+                            ? "border-purple-500/50 bg-purple-500/10 ring-1 ring-purple-500/20"
+                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                        }`}
+                      >
+                        {pkg.tag ? (
+                          <span className="absolute -top-2 right-3 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            {pkg.tag}
+                          </span>
+                        ) : null}
+                        <p className="text-xs text-zinc-400">{pkg.label}</p>
+                        <p className="mt-2 text-2xl font-bold text-white">{pkg.coins.toLocaleString()} 漫币</p>
+                        <p className="mt-2 text-sm text-purple-300">¥{pkg.price}</p>
+                        {isSelected ? (
+                          <span className="absolute left-3 top-3 rounded-full bg-purple-500 p-1">
+                            <Check className="h-3 w-3 text-white" />
+                          </span>
+                        ) : null}
+                      </button>
                     );
-                  })()}
+                  })}
                 </div>
               ) : (
-                <div className="flex items-center justify-center gap-2 py-3 text-sm text-zinc-500">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>点击套餐卡片开始选择</span>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center text-sm text-zinc-400">
+                  暂无可用充值套餐
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ====== 卡密兑换 Tab ====== */}
-          {rechargeTab === 'cardkey' && (
-            <div className="p-8">
-              <div className="max-w-sm mx-auto flex flex-col items-center py-6">
-                <div className="w-14 h-14 rounded-2xl bg-white/[0.06] border border-white/[0.12] flex items-center justify-center mb-5">
-                  <KeyRound className="w-6 h-6 text-purple-400" />
+              {selectedPackageInfo ? (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm text-zinc-400">已选择</p>
+                      <p className="mt-1 text-lg font-semibold text-white">
+                        {selectedPackageInfo.label} ({selectedPackageInfo.coins.toLocaleString()} 漫币)
+                      </p>
+                    </div>
+                    <p className="text-2xl font-bold text-purple-300">¥{selectedPackageInfo.price}</p>
+                  </div>
+
+                  {paymentConfig.enabled && paymentConfig.methods.length > 0 ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {paymentConfig.methods.map((method) => (
+                          <button
+                            key={method.code}
+                            onClick={() => setSelectedPaymentType(method.code)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                              selectedPaymentType === method.code
+                                ? "border-purple-500/50 bg-purple-500/20 text-purple-200"
+                                : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+                            }`}
+                          >
+                            {method.label || PAYMENT_LABELS[method.code] || method.code}
+                          </button>
+                        ))}
+                      </div>
+                      <Button
+                        onClick={handleOnlineRecharge}
+                        disabled={paying || Boolean(pollingOrderNo)}
+                        className="w-full bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50"
+                      >
+                        {paying || pollingOrderNo ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {pollingOrderNo ? "等待支付回调..." : "创建订单中..."}
+                          </>
+                        ) : (
+                          <>
+                            <CreditCard className="mr-2 h-4 w-4" />
+                            立即支付
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setShowWechatDialog(true)}
+                      className="mt-4 w-full bg-purple-600 text-white hover:bg-purple-500"
+                    >
+                      <MessageCircle className="mr-2 h-4 w-4" />
+                      联系客服购买
+                    </Button>
+                  )}
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">卡密兑换</h3>
-                <p className="text-sm text-zinc-400 mb-8">输入充值卡密，漫币即时到账</p>
-
-                <div className="w-full space-y-4">
+              ) : (
+                <p className="text-center text-sm text-zinc-500">请选择一个套餐开始充值</p>
+              )}
+            </div>
+          ) : (
+            <div className="p-6">
+              <div className="mx-auto flex max-w-sm flex-col items-center">
+                <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-3">
+                  <KeyRound className="h-6 w-6 text-purple-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white">卡密兑换</h3>
+                <p className="mb-6 mt-1 text-sm text-zinc-400">输入充值卡密，漫币将自动到账。</p>
+                <div className="w-full space-y-3">
                   <Input
                     value={cardKey}
                     onChange={(e) => setCardKey(e.target.value)}
                     placeholder="请输入充值卡密"
-                    className="bg-white/[0.04] border-white/[0.12] h-12 text-center text-base font-mono tracking-widest placeholder:text-zinc-600 placeholder:tracking-normal placeholder:font-sans focus-visible:ring-purple-500 rounded-xl"
-                    onKeyDown={(e) => e.key === 'Enter' && handleCardKeyRecharge()}
+                    className="h-11 border-white/10 bg-white/5 text-center font-mono text-base tracking-wider placeholder:font-sans placeholder:tracking-normal"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCardKeyRecharge();
+                      }
+                    }}
                   />
                   <Button
                     onClick={handleCardKeyRecharge}
                     disabled={recharging || !cardKey.trim()}
-                    className="w-full h-12 bg-purple-600 hover:bg-purple-500 text-white font-semibold text-sm shadow-lg shadow-purple-500/25 disabled:shadow-none disabled:opacity-40 rounded-xl transition-all active:scale-[0.97]"
+                    className="h-11 w-full bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50"
                   >
-                    {recharging ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      "立即兑换"
-                    )}
+                    {recharging ? <Loader2 className="h-4 w-4 animate-spin" /> : "立即兑换"}
                   </Button>
                 </div>
-
-                <p className="text-xs text-zinc-500 mt-6">
-                  卡密购买请添加微信：<span className="text-purple-400/80 font-medium">{contactConfig.wechatId || '客服'}</span>
+                <p className="mt-5 text-xs text-zinc-500">
+                  如需购买卡密，请联系客服微信:{" "}
+                  <span className="font-medium text-purple-300">{contactConfig.wechatId || "未配置"}</span>
                 </p>
               </div>
             </div>

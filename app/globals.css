@@ -1,5 +1,55 @@
 @import "tailwindcss";
 
+:root {
+  --scrollbar-size: 10px;
+  --scrollbar-track: rgba(24, 24, 27, 0.65);
+  --scrollbar-thumb: linear-gradient(180deg, #52525b 0%, #3f3f46 100%);
+  --scrollbar-thumb-hover: linear-gradient(180deg, #71717a 0%, #52525b 100%);
+}
+
+html,
+body,
+*:not(.scrollbar-hide) {
+  scrollbar-width: thin;
+  scrollbar-color: #52525b rgba(24, 24, 27, 0.65);
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*:not(.scrollbar-hide)::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+*:not(.scrollbar-hide)::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 9999px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+*:not(.scrollbar-hide)::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 28px;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+*:not(.scrollbar-hide)::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-corner,
+*:not(.scrollbar-hide)::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* 隐藏 Next.js 开发模式下的错误悬浮球和覆盖层 */
 #__next-build-watcher,
 nextjs-portal,

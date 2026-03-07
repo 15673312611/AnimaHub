@@ -122,13 +122,32 @@ export default function AiImagePage() {
     fetchHistory();
     fetchProjects();
     fetchCoinInfo();
-    
-    // 连接 WebSocket
-    wsService.connect();
-    
-    // 订阅用户图片生成频道（使用默认用户ID 1）
-    const userId = 1;
-    wsService.subscribeToUserImages(userId, handleImageStatusUpdate);
+
+    const resolveCurrentUserId = (): number | null => {
+      const token = localStorage.getItem("token");
+      if (!token) return null;
+      try {
+        const payloadPart = token.split(".")[1];
+        if (!payloadPart) return null;
+        const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        const payload = JSON.parse(window.atob(padded));
+        const id = Number(payload?.sub);
+        return Number.isFinite(id) ? id : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const userId = resolveCurrentUserId();
+    if (userId) {
+      // 连接 WebSocket
+      wsService.connect();
+      // 订阅当前用户图片生成频道
+      wsService.subscribeToUserImages(userId, handleImageStatusUpdate);
+    } else {
+      console.warn("WebSocket 跳过订阅：未获取到当前用户ID");
+    }
     
     // 注册重连回调：WebSocket 重连后刷新状态
     const unsubscribeReconnect = wsService.onReconnect(() => {
@@ -139,7 +158,9 @@ export default function AiImagePage() {
     });
     
     return () => {
-      wsService.unsubscribeFromUserImages(userId);
+      if (userId) {
+        wsService.unsubscribeFromUserImages(userId);
+      }
       unsubscribeReconnect();
       // 清理所有轮询
       pollingRefs.current.forEach(timer => clearInterval(timer));

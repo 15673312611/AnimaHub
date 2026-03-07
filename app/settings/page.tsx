@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { User, Lock, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { User, Lock, Loader2, Cpu } from "lucide-react";
 import api from "@/lib/api";
 
 interface UserProfile {
@@ -16,10 +17,26 @@ interface UserProfile {
   createdAt: string;
 }
 
+interface ModelOption {
+  id: number;
+  modelCode: string;
+  modelName: string;
+  pricingType: string;
+  pricePerCall?: number;
+  pricePerThousandTokens?: number;
+}
+
 export default function SettingsPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  
+
+  // 模型配置
+  const [imageModels, setImageModels] = useState<ModelOption[]>([]);
+  const [videoModels, setVideoModels] = useState<ModelOption[]>([]);
+  const [selectedImageModel, setSelectedImageModel] = useState("");
+  const [selectedVideoModel, setSelectedVideoModel] = useState("");
+  const [loadingModels, setLoadingModels] = useState(false);
+
   // 修改密码
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -28,6 +45,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchProfile();
+    fetchModels();
   }, []);
 
   const fetchProfile = async () => {
@@ -39,6 +57,43 @@ export default function SettingsPage() {
       console.error("获取用户信息失败", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchModels = async () => {
+    try {
+      setLoadingModels(true);
+      const [imgRes, vidRes] = await Promise.all([
+        api.get("/config/image-models?page=ai-image"),
+        api.get("/config/video-models?page=script")
+      ]);
+
+      setImageModels(imgRes.data.models || []);
+      setVideoModels(vidRes.data.models || []);
+
+      // 从localStorage加载用户选择
+      const savedImageModel = localStorage.getItem("preferredImageModel");
+      const savedVideoModel = localStorage.getItem("preferredVideoModel");
+
+      if (savedImageModel) setSelectedImageModel(savedImageModel);
+      else if (imgRes.data.defaultModel) setSelectedImageModel(imgRes.data.defaultModel);
+
+      if (savedVideoModel) setSelectedVideoModel(savedVideoModel);
+      else if (vidRes.data.defaultModel) setSelectedVideoModel(vidRes.data.defaultModel);
+    } catch (error) {
+      console.error("获取模型列表失败", error);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const saveModelPreference = (type: "image" | "video", modelCode: string) => {
+    if (type === "image") {
+      setSelectedImageModel(modelCode);
+      localStorage.setItem("preferredImageModel", modelCode);
+    } else {
+      setSelectedVideoModel(modelCode);
+      localStorage.setItem("preferredVideoModel", modelCode);
     }
   };
 
@@ -132,6 +187,64 @@ export default function SettingsPage() {
                 <div className="text-center py-8 text-gray-400">
                   获取用户信息失败，请刷新页面重试
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 推理模型配置 */}
+          <Card className="bg-white/5 border-white/10">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Cpu className="w-5 h-5 text-green-400" />
+                推理模型配置
+              </CardTitle>
+              <CardDescription className="text-gray-400">
+                选择您偏好的AI推理模型
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loadingModels ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-green-400" />
+                  <span className="ml-2 text-gray-400">加载中...</span>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>图像生成模型</Label>
+                    <Select value={selectedImageModel} onValueChange={(v) => saveModelPreference("image", v)}>
+                      <SelectTrigger className="bg-black/30 border-white/10">
+                        <SelectValue placeholder="选择图像模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {imageModels.map((model) => (
+                          <SelectItem key={model.id} value={model.modelCode}>
+                            {model.modelName} - {model.pricingType === 'token'
+                              ? `${model.pricePerThousandTokens}漫币/1K tokens`
+                              : `${model.pricePerCall}漫币/次`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>视频生成模型</Label>
+                    <Select value={selectedVideoModel} onValueChange={(v) => saveModelPreference("video", v)}>
+                      <SelectTrigger className="bg-black/30 border-white/10">
+                        <SelectValue placeholder="选择视频模型" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {videoModels.map((model) => (
+                          <SelectItem key={model.id} value={model.modelCode}>
+                            {model.modelName} - {model.pricingType === 'token'
+                              ? `${model.pricePerThousandTokens}漫币/1K tokens`
+                              : `${model.pricePerCall}漫币/次`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

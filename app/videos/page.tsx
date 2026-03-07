@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Video, Play, Download, Share2, Trash2, Loader2 } from "lucide-react";
-import api from "@/lib/api";
+import api, { getApiOrigin } from "@/lib/api";
 import { OptimizedVideo } from "@/components/OptimizedMedia";
 
 interface VideoItem {
@@ -22,6 +22,14 @@ interface VideoItem {
 export default function VideosPage() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const apiOrigin = getApiOrigin();
+
+  const resolveMediaUrl = (url: string) => {
+    if (!url) return "";
+    if (/^https?:\/\//i.test(url)) return url;
+    const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+    return `${apiOrigin}${normalizedPath}`;
+  };
 
   useEffect(() => {
     fetchVideos();
@@ -57,7 +65,7 @@ export default function VideosPage() {
 
   const handleDownload = (url: string, title: string) => {
     const link = document.createElement('a');
-    link.href = `http://localhost:3001${url}`;
+    link.href = resolveMediaUrl(url);
     link.download = `${title}.mp4`;
     link.click();
   };
@@ -97,7 +105,7 @@ export default function VideosPage() {
               <Card key={video.id} className="bg-white/5 border-white/10 hover:border-cyan-500/50 transition-all group overflow-hidden">
                 <div className="aspect-video bg-black relative overflow-hidden">
                   <OptimizedVideo 
-                    src={`http://localhost:3001${video.url}`}
+                    src={resolveMediaUrl(video.url)}
                     className="w-full h-full"
                     controls={false}
                     preload="metadata"
@@ -107,7 +115,7 @@ export default function VideosPage() {
                     <Button 
                       size="lg" 
                       className="rounded-full bg-cyan-600 hover:bg-cyan-700"
-                      onClick={() => window.open(`http://localhost:3001${video.url}`, '_blank')}
+                      onClick={() => window.open(resolveMediaUrl(video.url), '_blank')}
                     >
                       <Play className="w-6 h-6" />
                     </Button>
