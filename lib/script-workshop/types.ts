@@ -28,21 +28,9 @@ export interface ScriptWorkshopEpisodeOutline {
   estimatedShots: number;
 }
 
-export interface ScriptWorkshopShot {
-  index: number; // 1-based
-  durationSec: number;
-  visual: string;
-  narration?: string;
-  dialogue?: string;
-  sfx?: string;
-}
-
 export interface ScriptWorkshopEpisodeScript {
   index: number; // 1-based
-  title: string;
-  characters: string[];
-  shots: ScriptWorkshopShot[];
-  cliffhanger: string;
+  content: string; // AI 原始输出内容
 }
 
 export interface ScriptWorkshopOutlineResult {
@@ -52,7 +40,23 @@ export interface ScriptWorkshopOutlineResult {
 }
 
 export interface ScriptWorkshopEpisodeScriptResult {
-  type: "episode_script";
-  settings: ScriptWorkshopSettings;
-  episode: ScriptWorkshopEpisodeScript;
+  index: number;
+  content: string;
+}
+
+// 小说改编相关类型
+export interface NovelChapter {
+  index: number;       // 1-based
+  title: string;       // 章节标题，如"第一章 开始"
+  content: string;     // 章节正文
+  charCount: number;   // 字符数
+}
+
+export interface NovelAdaptationGroup {
+  episodeIndex: number;          // 对应第几集，1-based
+  chapterIndexes: number[];      // 包含哪些章节的 index（1-based）
+  totalChars: number;            // 合并后总字数
+  compressedContent?: string;    // AI 压缩后的内容
+  compressStatus?: "idle" | "compressing" | "done" | "failed";
+  compressError?: string;
 }

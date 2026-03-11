@@ -13,11 +13,12 @@ import api from "@/lib/api";
 import {
   type ScriptWorkshopEpisodeOutline,
   type ScriptWorkshopEpisodeScript,
-  type ScriptWorkshopEpisodeScriptResult,
   type ScriptWorkshopOutlineResult,
   type ScriptWorkshopSettings,
+  type NovelChapter,
+  type NovelAdaptationGroup,
 } from "@/lib/script-workshop/types";
-import { extractFirstJsonObject, safeJsonParse, validateOutlineResult, validateEpisodeScriptResult } from "@/lib/script-workshop/json";
+import { extractFirstJsonObject, safeJsonParse, validateOutlineResult } from "@/lib/script-workshop/json";
 import { retryWithValidation } from "@/lib/script-workshop/retry";
 import { formatEpisodeToText } from "@/lib/script-workshop/format";
 import { type ScriptWorkshopProjectRecord } from "@/lib/script-workshop/storage";
@@ -83,6 +84,7 @@ type TemplateSel = { type: "system" | "user"; id: string };
 // Script Workshop prompts: split categories so outline/script can use different template lists.
 const SCRIPT_WORKSHOP_OUTLINE_TEMPLATE_CATEGORY = "SCRIPT_WORKSHOP_OUTLINE";
 const SCRIPT_WORKSHOP_EPISODE_TEMPLATE_CATEGORY = "SCRIPT_WORKSHOP_EPISODE";
+const SCRIPT_WORKSHOP_NOVEL_COMPRESS_CATEGORY = "SCRIPT_WORKSHOP_NOVEL_COMPRESS";
 // Back-compat for existing DB data
 const SCRIPT_WORKSHOP_LEGACY_TEMPLATE_CATEGORY = "SCRIPT_WORKSHOP";
 
@@ -111,9 +113,21 @@ export default function ScriptWorkshopPage() {
   const [outlines, setOutlines] = useState<ScriptWorkshopEpisodeOutline[] | null>(null);
   const [episodeScripts, setEpisodeScripts] = useState<Record<number, ScriptWorkshopEpisodeScript>>({});
 
-  const [view, setView] = useState<"draft" | "episodes">("draft");
+  const [view, setView] = useState<"draft" | "episodes" | "novel">("draft");
   const [configOpen, setConfigOpen] = useState(false);
   const [selectedEpisodeIndex, setSelectedEpisodeIndex] = useState<number | null>(null);
+
+  // 小说改编状态
+  const [novelChapters, setNovelChapters] = useState<NovelChapter[]>([]);
+  const [novelGroups, setNovelGroups] = useState<NovelAdaptationGroup[]>([]);
+  const [novelCompressTemplateSel, setNovelCompressTemplateSel] = useState<TemplateSel | null>(null);
+  const [systemNovelCompressTemplates, setSystemNovelCompressTemplates] = useState<SystemPromptTemplate[]>([]);
+  const [userNovelCompressTemplates, setUserNovelCompressTemplates] = useState<UserInferenceTemplate[]>([]);
+  const novelBatchCancelRef = useRef(false);
+  const [novelBatchRunning, setNovelBatchRunning] = useState(false);
+
+  /** 项目模式：normal=普通灵感，novel=小说改编 */
+  const [projectMode, setProjectMode] = useState<"normal" | "novel">("normal");
 
   const [loadingOutline, setLoadingOutline] = useState(false);
   const [loadingEpisodeIndex, setLoadingEpisodeIndex] = useState<number | null>(null);
@@ -141,10 +155,13 @@ export default function ScriptWorkshopPage() {
 
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
+  // 全文查看弹窗
+  const [previewModal, setPreviewModal] = useState<{ title: string; content: string } | null>(null);
+
   const loadPromptTemplates = async () => {
     setLoadingPromptTemplates(true);
     try {
-      const [sysOutlineRes, sysEpisodeRes, userOutlineRes, userEpisodeRes] = await Promise.all([
+      const [sysOutlineRes, sysEpisodeRes, userOutlineRes, userEpisodeRes, sysNovelRes, userNovelRes] = await Promise.all([
         api.get<SystemPromptTemplate[]>(
           `/script-workshop/prompt-templates?category=${encodeURIComponent(SCRIPT_WORKSHOP_OUTLINE_TEMPLATE_CATEGORY)}`
         ),
@@ -157,12 +174,27 @@ export default function ScriptWorkshopPage() {
         api.get<UserInferenceTemplate[]>(
           `/ai-agent/user-inference-templates?category=${encodeURIComponent(SCRIPT_WORKSHOP_EPISODE_TEMPLATE_CATEGORY)}`
         ),
+        api.get<SystemPromptTemplate[]>(
+          `/script-workshop/prompt-templates?category=${encodeURIComponent(SCRIPT_WORKSHOP_NOVEL_COMPRESS_CATEGORY)}`
+        ),
+        api.get<UserInferenceTemplate[]>(
+          `/ai-agent/user-inference-templates?category=${encodeURIComponent(SCRIPT_WORKSHOP_NOVEL_COMPRESS_CATEGORY)}`
+        ),
       ]);
 
       let sysOutline = sysOutlineRes.data || [];
       let sysEpisode = sysEpisodeRes.data || [];
       let userOutline = userOutlineRes.data || [];
       let userEpisode = userEpisodeRes.data || [];
+      const sysNovel = sysNovelRes.data || [];
+      const userNovel = userNovelRes.data || [];
+      setSystemNovelCompressTemplates(sysNovel);
+      setUserNovelCompressTemplates(userNovel);
+      // 自动选第一个压缩模板
+      if (!novelCompressTemplateSel) {
+        if (sysNovel.length > 0) setNovelCompressTemplateSel({ type: "system", id: sysNovel[0].templateCode });
+        else if (userNovel.length > 0) setNovelCompressTemplateSel({ type: "user", id: String(userNovel[0].id) });
+      }
 
       const dedupeById = (list: UserInferenceTemplate[]) => {
         const seen = new Set<number>();
@@ -358,7 +390,24 @@ export default function ScriptWorkshopPage() {
 
     setLastSavedAt(p.updatedAt || null);
 
-    const nextView = p.outlines && p.outlines.length > 0 ? "episodes" : "draft";
+    // 项目模式
+    const mode = p.mode === "novel" ? "novel" : "normal";
+    setProjectMode(mode);
+
+    // 小说改编数据
+    setNovelChapters(p.novelChapters || []);
+    setNovelGroups(p.novelAdaptationGroups || []);
+    if (p.novelCompressTemplate) setNovelCompressTemplateSel(p.novelCompressTemplate as TemplateSel);
+
+    // 根据模式决定初始视图
+    let nextView: "draft" | "episodes" | "novel";
+    if (mode === "novel") {
+      // 小说改编模式：有分集脚本则进分集脚本，否则进章节改编
+      nextView = Object.keys(p.episodeScripts || {}).length > 0 ? "episodes" : "novel";
+    } else {
+      // 普通模式：有大纲则进分集脚本，否则进灵感
+      nextView = p.outlines && p.outlines.length > 0 ? "episodes" : "draft";
+    }
     setView(nextView);
     setSelectedEpisodeIndex(p.outlines?.[0]?.index ?? null);
 
@@ -412,6 +461,10 @@ export default function ScriptWorkshopPage() {
       episodeScripts: Object.keys(episodeScripts).length ? episodeScripts : undefined,
       outlinePromptTemplate: outlinePromptTemplateSel || undefined,
       episodePromptTemplate: episodePromptTemplateSel || undefined,
+      mode: projectMode,
+      novelChapters: novelChapters.length ? novelChapters : undefined,
+      novelAdaptationGroups: novelGroups.length ? novelGroups : undefined,
+      novelCompressTemplate: novelCompressTemplateSel || undefined,
       ...patch,
     };
 
@@ -458,6 +511,7 @@ export default function ScriptWorkshopPage() {
     episodeScripts,
     outlinePromptTemplateSel,
     episodePromptTemplateSel,
+    novelCompressTemplateSel,
     hasDraftContent,
     batchGenerating,
     loadingOutline,
@@ -547,8 +601,12 @@ export default function ScriptWorkshopPage() {
   };
 
   const handleGenerateEpisodeScript = async (outline: ScriptWorkshopEpisodeOutline) => {
-    if (!sourceText.trim()) {
-      toast("请先输入构思/小说内容", "error");
+    // 小说改编模式：使用 outline.summary（改编后的内容）作为 sourceText
+    // 普通模式：使用 sourceText（用户输入的构思）
+    const effectiveSourceText = projectMode === "novel" ? outline.summary : sourceText;
+
+    if (!effectiveSourceText.trim()) {
+      toast(projectMode === "novel" ? "该集改编内容为空" : "请先输入构思/小说内容", "error");
       return;
     }
 
@@ -560,38 +618,19 @@ export default function ScriptWorkshopPage() {
 
     setLoadingEpisodeIndex(outline.index);
     try {
-      const result = await retryWithValidation(
-        async () => {
-          const res = await api.post("/script-workshop/generate-episode-script", {
-            template: episodeSel,
-            sourceText,
-            settings,
-            outline: normalizeEpisodeOutlineForRequest(outline as any, settings),
-          });
+      const res = await api.post("/script-workshop/generate-episode-script", {
+        template: episodeSel,
+        sourceText: effectiveSourceText,
+        settings,
+        outline: normalizeEpisodeOutlineForRequest(outline as any, settings),
+      });
 
-          const reply: string = res.data?.reply || "";
-          const jsonText = extractFirstJsonObject(reply) || reply;
-          const parsed = safeJsonParse<ScriptWorkshopEpisodeScriptResult>(jsonText);
+      const reply: string = res.data?.reply || "";
+      if (!reply.trim()) {
+        throw new Error("AI 返回内容为空");
+      }
 
-          if (!parsed.ok) {
-            throw new Error(`AI 输出不是有效 JSON：${parsed.error}`);
-          }
-
-          return parsed.value;
-        },
-        validateEpisodeScriptResult,
-        {
-          maxAttempts: 2,
-          onAttempt: (attempt, error) => {
-            console.warn(`生成第${outline.index}集第 ${attempt} 次尝试失败:`, error);
-            if (attempt === 1) {
-              toast(`第${outline.index}集格式不正确，正在重试...`, "info");
-            }
-          },
-        }
-      );
-
-      const episode = result.episode;
+      const episode: ScriptWorkshopEpisodeScript = { index: outline.index, content: reply.trim() };
       setEpisodeScripts((prev) => {
         const next = { ...prev, [episode.index]: episode };
         void persistCurrent({ episodeScripts: next });
@@ -607,7 +646,7 @@ export default function ScriptWorkshopPage() {
     }
   };
 
-  // LEGACY（已弃用）：曾用于把“剧本工坊”生成的脚本导入 `/scripts`（旧版分镜解析器）。
+  // LEGACY（已弃用）：曾用于把"剧本工坊"生成的脚本导入 `/scripts`（旧版分镜解析器）。
   // 需求：剧本工坊不再依赖旧版解析器。
   // const handlePublishToLegacyScripts = async (ep: ScriptWorkshopEpisodeScript) => {
   //   try {
@@ -658,6 +697,9 @@ export default function ScriptWorkshopPage() {
         throw new Error("已取消");
       }
 
+      // 小说改编模式：使用 outline.summary 作为 sourceText
+      const effectiveSourceText = projectMode === "novel" ? outline.summary : sourceText;
+
       const result = await retryWithValidation(
         async () => {
           if (batchCancelRef.current) {
@@ -666,22 +708,18 @@ export default function ScriptWorkshopPage() {
 
           const res = await api.post("/script-workshop/generate-episode-script", {
             template: episodeSel,
-            sourceText,
+            sourceText: effectiveSourceText,
             settings,
             outline: normalizeEpisodeOutlineForRequest(outline as any, settings),
           });
 
           const reply: string = res.data?.reply || "";
-          const jsonText = extractFirstJsonObject(reply) || reply;
-          const parsed = safeJsonParse<ScriptWorkshopEpisodeScriptResult>(jsonText);
-
-          if (!parsed.ok) {
-            throw new Error(`AI 输出不是有效 JSON：${parsed.error}`);
+          if (!reply.trim()) {
+            throw new Error("AI 返回内容为空");
           }
-
-          return parsed.value;
+          return { index: outline.index, content: reply.trim() };
         },
-        validateEpisodeScriptResult,
+        (val) => (val.content ? { ok: true, value: val } : { ok: false, error: "内容为空" }),
         {
           maxAttempts: 3,
           onAttempt: (attempt, error) => {
@@ -690,7 +728,7 @@ export default function ScriptWorkshopPage() {
         }
       );
 
-      const episode = result.episode;
+      const episode: ScriptWorkshopEpisodeScript = result;
       setEpisodeScripts((prev) => {
         const next = { ...prev, [episode.index]: episode };
         void persistCurrent({ episodeScripts: next });
@@ -733,6 +771,98 @@ export default function ScriptWorkshopPage() {
     batchCancelRef.current = true;
     setBatchCancelling(true);
     toast("正在取消批量生成...", "info");
+  };
+
+  // 改编单集小说内容
+  const handleNovelCompressOne = async (groupIndex: number) => {
+    const group = novelGroups[groupIndex];
+    if (!group) return;
+
+    // 拼接该集的章节内容，超过3万字截断
+    const MAX_CHARS = 30000;
+    const chaps = novelChapters.filter((c) => group.chapterIndexes.includes(c.index));
+    let combined = chaps.map((c) => `【${c.title}】\n${c.content}`).join("\n\n");
+    if (combined.length > MAX_CHARS) combined = combined.slice(0, MAX_CHARS) + "\n\n[内容已截断，超过3万字上限]";
+
+    const prevGroup = novelGroups[groupIndex - 1];
+    const prevEpisodeTail = prevGroup?.compressedContent
+      ? prevGroup.compressedContent.slice(-500)
+      : undefined;
+
+    // 更新状态为改编中
+    setNovelGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, compressStatus: "compressing", compressError: undefined } : g));
+
+    try {
+      const res = await api.post("/script-workshop/novel-adapt-episode", {
+        template: novelCompressTemplateSel || undefined,
+        chapterContent: combined,
+        episodeIndex: group.episodeIndex,
+        totalEpisodes: novelGroups.length,
+        prevEpisodeTail,
+      });
+
+      const adapted = res.data?.content || "";
+      setNovelGroups((prev) => {
+        const updated = prev.map((g, i) =>
+          i === groupIndex ? { ...g, compressStatus: "done" as const, compressedContent: adapted } : g
+        );
+        void persistCurrent({ novelAdaptationGroups: updated });
+        return updated;
+      });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || "改编失败";
+      setNovelGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, compressStatus: "failed" as const, compressError: msg } : g));
+      toast(`第${group.episodeIndex}集改编失败: ${msg}`, "error");
+    }
+  };
+
+  // 批量改编所有集（并发）
+  const handleNovelBatchCompress = async () => {
+    if (novelBatchRunning) return;
+    novelBatchCancelRef.current = false;
+    setNovelBatchRunning(true);
+
+    const pending = novelGroups
+      .map((g, i) => ({ group: g, index: i }))
+      .filter(({ group }) => group.compressStatus !== "done");
+
+    if (pending.length === 0) {
+      setNovelBatchRunning(false);
+      return;
+    }
+
+    // 全部并发发出，prevEpisodeTail 使用当前已有的改编结果（已改编过的集才有）
+    await Promise.all(
+      pending.map(({ index }) => handleNovelCompressOne(index))
+    );
+
+    setNovelBatchRunning(false);
+    if (!novelBatchCancelRef.current) {
+      toast("全部集改编完成，可进入分集脚本查看", "success");
+    }
+  };
+
+  // 改编完成后，把 compressedContent 作为 summary 填入 outlines（每集一条大纲），进入分集脚本
+  const handleNovelToOutlines = () => {
+    const doneGroups = novelGroups.filter((g) => g.compressStatus === "done" && g.compressedContent);
+    if (doneGroups.length === 0) {
+      toast("请先完成至少一集的内容改编", "error");
+      return;
+    }
+
+    const newOutlines: ScriptWorkshopEpisodeOutline[] = doneGroups.map((g) => ({
+      index: g.episodeIndex,
+      title: `第${g.episodeIndex}集`,
+      hook: "",
+      summary: g.compressedContent || "",
+      cliffhanger: "",
+      estimatedShots: estimateShotsPerEpisode(settings),
+    }));
+
+    setOutlines(newOutlines);
+    setView("episodes");
+    setSelectedEpisodeIndex(newOutlines[0]?.index ?? null);
+    toast(`已将 ${doneGroups.length} 集压缩内容转为分集大纲，可开始生成脚本`, "success");
   };
 
   const canGoEpisodes = Boolean(outlines && outlines.length > 0);
@@ -853,7 +983,7 @@ export default function ScriptWorkshopPage() {
             <div className="min-w-0">
               <div className="font-semibold leading-tight truncate">剧本工坊 · 编辑</div>
               <div className="text-[11px] text-zinc-500 truncate" suppressHydrationWarning>
-                {view === "draft" ? "01 灵感&设置" : "02 分集脚本"}
+                {view === "novel" ? "01 章节改编" : view === "draft" ? "01 灵感&设置" : "02 分集脚本"}
                 {lastSavedAt ? ` · 已保存 ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}
               </div>
             </div>
@@ -1069,6 +1199,7 @@ export default function ScriptWorkshopPage() {
               )}
 
               {/* 分集大纲模板 */}
+              {view !== "novel" && (
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1122,6 +1253,7 @@ export default function ScriptWorkshopPage() {
                   </SelectContent>
                 </Select>
               </div>
+              )}
 
               {/* 分集脚本模板 */}
               <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
@@ -1187,6 +1319,53 @@ export default function ScriptWorkshopPage() {
                     暂无模板（请在后台添加 category=SCRIPT_WORKSHOP_OUTLINE / SCRIPT_WORKSHOP_EPISODE，或先执行默认模板的 SQL seed）
                   </div>
                 )}
+
+              {/* 小说改编模板 */}
+              {projectMode === "novel" && (
+                <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-zinc-200">小说改编模板</div>
+                      <div className="text-xs text-zinc-500 mt-0.5">用于将多章节内容改编为一集故事</div>
+                    </div>
+                  </div>
+                  <Select
+                    value={novelCompressTemplateSel ? `${novelCompressTemplateSel.type}:${novelCompressTemplateSel.id}` : ""}
+                    onValueChange={(v) => {
+                      const [type, id] = v.split(":");
+                      if (type === "system" || type === "user") setNovelCompressTemplateSel({ type: type as "system" | "user", id });
+                    }}
+                    disabled={loadingPromptTemplates || (systemNovelCompressTemplates.length === 0 && userNovelCompressTemplates.length === 0)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="选择压缩模板" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {systemNovelCompressTemplates.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>📦 系统模板</SelectLabel>
+                          {systemNovelCompressTemplates.map((t) => (
+                            <SelectItem key={t.templateCode} value={`system:${t.templateCode}`}>{t.templateName}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {userNovelCompressTemplates.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>👤 我的模板</SelectLabel>
+                          {userNovelCompressTemplates.map((t) => (
+                            <SelectItem key={t.id} value={`user:${t.id}`}>{t.templateName}</SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {systemNovelCompressTemplates.length === 0 && userNovelCompressTemplates.length === 0 && !loadingPromptTemplates && (
+                    <div className="text-[10px] text-zinc-500">
+                      暂无模板，请在后台添加 category=SCRIPT_WORKSHOP_NOVEL_COMPRESS 的模板
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>
@@ -1198,38 +1377,71 @@ export default function ScriptWorkshopPage() {
           {/* Stepper */}
           <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
-            <button
-              type="button"
-              onClick={() => setView("draft")}
-              className={`px-3 py-2 rounded-lg text-sm transition ${
-                view === "draft" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              01 灵感
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("episodes")}
-              disabled={!canGoEpisodes}
-              className={`px-3 py-2 rounded-lg text-sm transition ${
-                view === "episodes" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
-              } disabled:opacity-50 disabled:hover:bg-transparent`}
-            >
-              02 分集脚本
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (scriptsCount === 0) return;
-                void persistCurrent();
-                router.push(`/script-workshop/pipeline/${encodeURIComponent(projectId)}`);
-              }}
-              disabled={scriptsCount === 0}
-              className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent"
-              title={scriptsCount === 0 ? "请先生成至少一集脚本" : "进入分镜&导入"}
-            >
-              03 分镜导入
-            </button>
+            {projectMode === "novel" ? (
+              // 小说改编模式：章节改编 → 分集脚本 → 分镜导入
+              <>
+                <button
+                  type="button"
+                  onClick={() => setView("novel")}
+                  className={`px-3 py-2 rounded-lg text-sm transition ${
+                    view === "novel" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  01 章节改编
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("episodes")}
+                  disabled={!canGoEpisodes}
+                  className={`px-3 py-2 rounded-lg text-sm transition ${
+                    view === "episodes" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  } disabled:opacity-50 disabled:hover:bg-transparent`}
+                >
+                  02 分集脚本
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (scriptsCount === 0) return; void persistCurrent(); router.push(`/script-workshop/pipeline/${encodeURIComponent(projectId)}`); }}
+                  disabled={scriptsCount === 0}
+                  className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent"
+                  title={scriptsCount === 0 ? "请先生成至少一集脚本" : "进入分镜&导入"}
+                >
+                  03 分镜导入
+                </button>
+              </>
+            ) : (
+              // 普通模式：灵感 → 分集脚本 → 分镜导入
+              <>
+                <button
+                  type="button"
+                  onClick={() => setView("draft")}
+                  className={`px-3 py-2 rounded-lg text-sm transition ${
+                    view === "draft" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  01 灵感
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("episodes")}
+                  disabled={!canGoEpisodes}
+                  className={`px-3 py-2 rounded-lg text-sm transition ${
+                    view === "episodes" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                  } disabled:opacity-50 disabled:hover:bg-transparent`}
+                >
+                  02 分集脚本
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (scriptsCount === 0) return; void persistCurrent(); router.push(`/script-workshop/pipeline/${encodeURIComponent(projectId)}`); }}
+                  disabled={scriptsCount === 0}
+                  className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent"
+                  title={scriptsCount === 0 ? "请先生成至少一集脚本" : "进入分镜&导入"}
+                >
+                  03 分镜导入
+                </button>
+              </>
+            )}
           </div>
 
           <div className="ml-auto text-xs text-zinc-500">
@@ -1242,6 +1454,157 @@ export default function ScriptWorkshopPage() {
             )}
           </div>
         </div>
+
+        {view === "novel" && (
+          <div className="space-y-4">
+            {/* 顶部操作栏 */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-zinc-200">小说章节改编</div>
+                  <div className="text-xs text-zinc-500 mt-0.5">
+                    共 {novelChapters.length} 章 · {novelGroups.length} 集 ·{" "}
+                    {novelGroups.filter((g) => g.compressStatus === "done").length} 集已改编
+                  </div>
+                </div>
+                <div className="h-8 w-px bg-white/10" />
+                <div className="text-xs text-zinc-400 space-y-0.5">
+                  <div>单集时长：{settings.episodeDurationSec}s</div>
+                  <div>改编模板：{novelCompressTemplateSel ? (
+                    novelCompressTemplateSel.type === "system"
+                      ? systemNovelCompressTemplates.find(t => t.templateCode === novelCompressTemplateSel.id)?.templateName || "系统模板"
+                      : userNovelCompressTemplates.find(t => String(t.id) === novelCompressTemplateSel.id)?.templateName || "用户模板"
+                  ) : "默认模板"}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-white/10 text-zinc-300 hover:bg-white/10"
+                  onClick={() => setConfigOpen(true)}
+                >
+                  <Settings2 className="w-3.5 h-3.5 mr-1.5" />
+                  参数配置
+                </Button>
+                {novelBatchRunning ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-white/10 text-zinc-400"
+                    disabled
+                  >
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    改编中...
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-white/10 text-zinc-300 hover:bg-white/10"
+                    onClick={handleNovelBatchCompress}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 mr-1.5" />
+                    一键改编全部
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="bg-purple-600 hover:bg-purple-500 text-white"
+                  onClick={handleNovelToOutlines}
+                  disabled={novelGroups.filter((g) => g.compressStatus === "done").length === 0}
+                >
+                  进入分集脚本 →
+                </Button>
+              </div>
+            </div>
+
+            {/* 无改编模板提示（使用内置默认模板，此提示仅供参考） */}
+            {!novelCompressTemplateSel?.id && (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-xs text-amber-300">
+                未配置改编模板，将使用内置默认模板。如需自定义，请在后台添加 category=SCRIPT_WORKSHOP_NOVEL_COMPRESS 的模板
+              </div>
+            )}
+
+            {/* 分集列表 */}
+            <div className="space-y-3">
+              {novelGroups.map((group, gi) => {
+                const chaps = novelChapters.filter((c) => group.chapterIndexes.includes(c.index));
+                const first = chaps[0];
+                const last = chaps[chaps.length - 1];
+                const chapRange = chaps.length === 1 ? first?.title : `${first?.title} ~ ${last?.title}`;
+                const isCompressing = group.compressStatus === "compressing";
+                const isDone = group.compressStatus === "done";
+                const isFailed = group.compressStatus === "failed";
+
+                return (
+                  <div
+                    key={group.episodeIndex}
+                    className={`rounded-xl border p-4 space-y-3 transition-colors ${
+                      isDone
+                        ? "border-emerald-500/25 bg-emerald-500/5"
+                        : isFailed
+                        ? "border-red-500/25 bg-red-500/5"
+                        : isCompressing
+                        ? "border-purple-500/30 bg-purple-500/5"
+                        : "border-white/10 bg-white/3"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-zinc-200">第{group.episodeIndex}集</span>
+                          <span className="text-xs text-zinc-500 truncate">{chapRange}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                            isDone ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" :
+                            isFailed ? "border-red-500/30 bg-red-500/10 text-red-300" :
+                            isCompressing ? "border-purple-500/30 bg-purple-500/10 text-purple-300" :
+                            "border-zinc-600 bg-zinc-800 text-zinc-400"
+                          }`}>
+                            {isDone ? "已改编" : isFailed ? "失败" : isCompressing ? "改编中..." : "待改编"}
+                          </span>
+                          <span className={`text-[10px] text-zinc-500 ${group.totalChars > 30000 ? "text-amber-400" : ""}`}>
+                            {(group.totalChars / 10000).toFixed(1)}万字{group.totalChars > 30000 ? " ⚠" : ""}
+                          </span>
+                        </div>
+                        {isFailed && group.compressError && (
+                          <div className="mt-1 text-xs text-red-400">{group.compressError}</div>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-xs"
+                        disabled={isCompressing || novelBatchRunning}
+                        onClick={() => handleNovelCompressOne(gi)}
+                      >
+                        {isCompressing ? <Loader2 className="w-3 h-3 animate-spin" /> : isDone ? "重新改编" : "改编"}
+                      </Button>
+                    </div>
+
+                    {isDone && group.compressedContent && (
+                      <div className="rounded-lg bg-black/30 border border-white/8 p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[10px] text-zinc-500">改编结果（将作为该集大纲内容）</div>
+                          <button
+                            type="button"
+                            className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
+                            onClick={() => setPreviewModal({ title: `第${group.episodeIndex}集改编内容`, content: group.compressedContent! })}
+                          >
+                            查看全文
+                          </button>
+                        </div>
+                        <div className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap max-h-28 overflow-y-auto pr-1">
+                          {group.compressedContent}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {view === "draft" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1429,68 +1792,123 @@ export default function ScriptWorkshopPage() {
                 ) : (
                   <>
                     <div className="p-6 border-b border-white/10">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <div className="text-xs text-zinc-500">第 {selectedOutline.index} 集</div>
-                          <div className="text-xl font-bold text-white mt-1 truncate">{selectedOutline.title}</div>
-                          <div className="text-sm text-zinc-400 mt-2 leading-relaxed">{selectedOutline.summary}</div>
-                          <div className="mt-3 text-xs text-amber-300/80">结尾悬念：{selectedOutline.cliffhanger}</div>
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-xs text-zinc-500">第 {selectedOutline.index} 集</div>
+                            <div className="text-xl font-bold text-white mt-1">{selectedOutline.title}</div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                              size="sm"
+                              variant={selectedEpisodeScript ? "outline" : "secondary"}
+                              onClick={() => handleGenerateEpisodeScript(selectedOutline)}
+                              disabled={loadingEpisodeIndex === selectedOutline.index}
+                              className={
+                                selectedEpisodeScript
+                                  ? "border-white/10 text-zinc-300 hover:bg-white/10"
+                                  : "bg-purple-500/10 text-purple-300 hover:bg-purple-500/20"
+                              }
+                            >
+                              {loadingEpisodeIndex === selectedOutline.index ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  生成中
+                                </>
+                              ) : selectedEpisodeScript ? (
+                                "重新生成"
+                              ) : (
+                                "生成脚本"
+                              )}
+                            </Button>
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-white/10 text-zinc-300 hover:bg-white/10"
+                              onClick={() => {
+                                if (!selectedEpisodeScript) {
+                                  toast("请先生成该集脚本", "info");
+                                  return;
+                                }
+                                downloadText(
+                                  `${currentDisplayTitle}_第${selectedEpisodeScript.index}集.md`,
+                                  formatEpisodeToText(selectedEpisodeScript)
+                                );
+                              }}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              下载MD
+                            </Button>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Button
-                            size="sm"
-                            variant={selectedEpisodeScript ? "outline" : "secondary"}
-                            onClick={() => handleGenerateEpisodeScript(selectedOutline)}
-                            disabled={loadingEpisodeIndex === selectedOutline.index}
-                            className={
-                              selectedEpisodeScript
-                                ? "border-white/10 text-zinc-300 hover:bg-white/10"
-                                : "bg-purple-500/10 text-purple-300 hover:bg-purple-500/20"
-                            }
-                          >
-                            {loadingEpisodeIndex === selectedOutline.index ? (
-                              <>
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                生成中
-                              </>
-                            ) : selectedEpisodeScript ? (
-                              "重新生成"
-                            ) : (
-                              "生成脚本"
-                            )}
-                          </Button>
+                        <div className="space-y-3">
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-zinc-500">剧情摘要</span>
+                              <button
+                                type="button"
+                                className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
+                                onClick={() => setPreviewModal({
+                                  title: `第${selectedOutline.index}集 - 剧情摘要`,
+                                  content: selectedOutline.summary,
+                                })}
+                              >
+                                查看全文
+                              </button>
+                            </div>
+                            <div className="text-sm text-zinc-400 leading-relaxed max-h-40 overflow-y-auto pr-1">
+                              {selectedOutline.summary}
+                            </div>
+                          </div>
 
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-white/10 text-zinc-300 hover:bg-white/10"
-                            onClick={() => {
-                              if (!selectedEpisodeScript) {
-                                toast("请先生成该集脚本", "info");
-                                return;
-                              }
-                              downloadText(
-                                `${currentDisplayTitle}_第${selectedEpisodeScript.index}集.md`,
-                                formatEpisodeToText(selectedEpisodeScript, settings)
-                              );
-                            }}
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            下载MD
-                          </Button>
+                          {selectedOutline.cliffhanger && (
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-xs text-zinc-500">结尾悬念</span>
+                                <button
+                                  type="button"
+                                  className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
+                                  onClick={() => setPreviewModal({
+                                    title: `第${selectedOutline.index}集 - 结尾悬念`,
+                                    content: selectedOutline.cliffhanger,
+                                  })}
+                                >
+                                  查看全文
+                                </button>
+                              </div>
+                              <div className="text-xs text-amber-300/80 leading-relaxed max-h-32 overflow-y-auto pr-1">
+                                {selectedOutline.cliffhanger}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="p-6">
                       {selectedEpisodeScript ? (
-                        <div className="rounded-xl border border-white/10 bg-black/40 p-4 font-mono text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-[520px] overflow-y-auto custom-scrollbar">
-                          {formatEpisodeToText(selectedEpisodeScript, settings)}
+                        <div className="space-y-2">
+                          <div className="rounded-xl border border-white/10 bg-black/40 p-4 font-mono text-xs text-zinc-200 whitespace-pre-wrap leading-relaxed max-h-[260px] overflow-y-auto custom-scrollbar">
+                            {formatEpisodeToText(selectedEpisodeScript)}
+                          </div>
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                              onClick={() => setPreviewModal({
+                                title: `第${selectedEpisodeScript.index}集脚本`,
+                                content: formatEpisodeToText(selectedEpisodeScript),
+                              })}
+                            >
+                              查看全文
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="rounded-xl border border-white/10 bg-black/30 p-10 text-zinc-500">
-                          该集还没有生成脚本。点击右上角“生成脚本”。
+                          该集还没有生成脚本。点击右上角"生成脚本"。
                         </div>
                       )}
                     </div>
@@ -1562,6 +1980,35 @@ export default function ScriptWorkshopPage() {
         </div>
       )}
     </div>
+
+    {/* 全文预览弹窗 */}
+    {previewModal && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+        onClick={() => setPreviewModal(null)}
+      >
+        <div
+          className="relative w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl border border-white/15 bg-[#0d1117] shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+            <div className="text-sm font-semibold text-zinc-200">{previewModal.title}</div>
+            <button
+              type="button"
+              className="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
+              onClick={() => setPreviewModal(null)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="overflow-y-auto p-5 flex-1">
+            <div className="font-mono text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+              {previewModal.content}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }

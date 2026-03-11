@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast-provider";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn, toThumbnailUrl } from "@/lib/utils";
@@ -96,7 +97,7 @@ export default function DrawerPanel({
   onChangeFirstFrameInferenceTemplate,
 }: Props) {
   const { toast } = useToast();
-  // 提取状态超时计时器，防止 WS 丢失时按钮卡在“提取中”
+  // 提取状态超时计时器，防止 WS 丢失时按钮卡在"提取中"
   const extractingCharTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractingSceneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractingItemTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -126,7 +127,7 @@ export default function DrawerPanel({
     setter(false);
   };
 
-  // 提取状态：后端异步执行，按钮“提取中”需等 WS 返回后再结束
+  // 提取状态：后端异步执行，按钮"提取中"需等 WS 返回后再结束
   const [extractingCharacters, setExtractingCharacters] = useState(false);
   const [extractingScenes, setExtractingScenes] = useState(false);
   const [extractingItems, setExtractingItems] = useState(false);
@@ -138,7 +139,7 @@ export default function DrawerPanel({
   const stopExtractingScenes = () => stopExtracting(setExtractingScenes, extractingSceneTimer);
   const stopExtractingItems = () => stopExtracting(setExtractingItems, extractingItemTimer);
 
-  // 拉取进行中任务：用于刷新后恢复“生成中”状态（以任务表为准，防止重复提交）
+  // 拉取进行中任务：用于刷新后恢复"生成中"状态（以任务表为准，防止重复提交）
   const [processingTasks, setProcessingTasks] = useState<TaskItem[]>([]);
 
   const loadProcessingTasks = useCallback(async () => {
@@ -170,15 +171,15 @@ export default function DrawerPanel({
         timerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>,
         msg: string
       ) => {
-        // 给按钮的“提取中”状态留出可见时间（尤其是任务很快完成的情况）
+        // 给按钮的"提取中"状态留出可见时间（尤其是任务很快完成的情况）
         setTimeout(() => {
           stopExtracting(setter, timerRef);
           toast(msg, "success");
         }, 150);
       };
-      // 失败消息弹出提示
-      if (message.type.endsWith("_FAILED")) {
-        // 提取失败：结束“提取中”
+      // 失败消息弹出提示（视频失败由 ShotCard 专门展示，不在此弹 toast）
+      if (message.type.endsWith("_FAILED") && !message.type.includes("SHOT_VIDEO")) {
+        // 提取失败：结束"提取中"
         if (message.type === "AI_AGENT_EXTRACT_FAILED") {
           stopExtracting(setExtractingCharacters, extractingCharTimer);
           stopExtracting(setExtractingScenes, extractingSceneTimer);
@@ -187,7 +188,7 @@ export default function DrawerPanel({
 
         toast(message.error || "任务执行失败", "error");
       }
-      // 提取类任务完成提示（后端是异步执行，HTTP 只代表“已开始”）
+      // 提取类任务完成提示（后端是异步执行，HTTP 只代表"已开始"）
       else if (message.type === "AI_AGENT_CHARACTERS_EXTRACTED") {
         finish(setExtractingCharacters, extractingCharTimer, "人物提取完成");
       } else if (message.type === "AI_AGENT_SCENES_EXTRACTED") {
@@ -233,6 +234,10 @@ export default function DrawerPanel({
     const styleType = workflow?.styleType;
     const custom = (workflow?.customStyle || "").trim();
     if (custom) return custom;
+    if (styleType === "2d_anime") return "二维动漫风格";
+    if (styleType === "3d_anime") return "三维动漫风格";
+    if (styleType === "realistic") return "写实电影风格";
+    return "动漫风格";
 
     return styleType === "2d_anime"
       ? "二维动漫风格"
@@ -247,6 +252,34 @@ export default function DrawerPanel({
     onSwitchType?.("settings");
   }, [onSwitchType]);
 
+  const getDrawerTitle = () => {
+    if (type === "batchOps") return "批量操作";
+    if (type === "characters") return "角色配置";
+    if (type === "scenes") return "场景配置";
+    if (type === "items") return "物品配置";
+    if (type === "imageModel") return "图片模型";
+    if (type === "videoModel") return "视频模型";
+    if (type === "settings") return "画风与设置";
+    if (type === "inference") return "推理设置";
+    if (type === "tasks") return "任务队列";
+    if (type === "export") return "导出";
+    return "";
+  };
+
+  const getDrawerDescription = () => {
+    if (type === "batchOps") return "批量拼图、批量生成等操作";
+    if (type === "characters") return "管理角色信息与形象";
+    if (type === "scenes") return "管理场景信息与背景";
+    if (type === "items") return "管理道具物品与素材";
+    if (type === "imageModel") return "选择首帧生成模型";
+    if (type === "videoModel") return "选择视频生成模型";
+    if (type === "settings") return "配置画风与生成参数";
+    if (type === "inference") return "配置视频/首帧提示词推理模板";
+    if (type === "tasks") return "查看进行中的任务";
+    if (type === "export") return "导出项目资源";
+    return "";
+  };
+
   // 图片预览
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -259,11 +292,11 @@ export default function DrawerPanel({
 
   return (
     <div className={cn(
-      "fixed inset-y-0 right-14 bg-[#1a1a1c] border-l border-zinc-800 shadow-2xl z-40 flex flex-col animate-in slide-in-from-right duration-200",
+      "fixed inset-y-0 right-14 z-40 flex flex-col border-l border-zinc-700/80 bg-gradient-to-b from-[#191c22] via-[#141720] to-[#10131a] shadow-[0_0_40px_rgba(0,0,0,0.45)] backdrop-blur-sm animate-in slide-in-from-right duration-200",
       drawerWidth
     )}>
       {/* 头部 */}
-      <div className="h-16 border-b border-zinc-800 px-6 flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#1e1e20] to-[#1a1a1c]">
+      <div className="h-16 border-b border-zinc-800/80 px-6 flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#202431] via-[#1a1f2b] to-[#171b26]">
         <div className="flex items-center gap-4">
           <div className={cn(
             "w-10 h-10 rounded-xl flex items-center justify-center",
@@ -290,7 +323,9 @@ export default function DrawerPanel({
             {type === "export" && <Download className="w-5 h-5 text-pink-400" />}
           </div>
           <div>
-            <h3 className="font-semibold text-base">
+            <h3 className="font-semibold text-base">{getDrawerTitle()}</h3>
+            <p className="text-xs text-zinc-500">{getDrawerDescription()}</p>
+            <h3 className="hidden">
               {type === "batchOps" && "批量操作"}
               {type === "characters" && "角色配置"}
               {type === "scenes" && "场景配置"}
@@ -302,7 +337,7 @@ export default function DrawerPanel({
               {type === "tasks" && "任务队列"}
               {type === "export" && "导出"}
             </h3>
-            <p className="text-xs text-zinc-500">
+            <p className="hidden">
               {type === "batchOps" && "批量拼图、生成等操作"}
               {type === "characters" && "管理角色信息与形象"}
               {type === "scenes" && "管理场景信息与背景"}
@@ -316,7 +351,7 @@ export default function DrawerPanel({
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2.5 hover:bg-zinc-800 rounded-xl transition-colors">
+        <button onClick={onClose} className="p-2.5 hover:bg-zinc-800/80 rounded-xl border border-transparent hover:border-zinc-700 transition-all">
           <X className="w-5 h-5 text-zinc-400" />
         </button>
       </div>
@@ -2192,7 +2227,787 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
       setSaving(false);
     }
   };
+  /*
 
+  const currentCategoryLabel = inferenceCategory === 'video' ? '视频提示词' : '首帧提示词';
+  const currentCategoryHint = inferenceCategory === 'video'
+    ? '根据台词推理镜头运动和动作描述。'
+    : '根据台词和视频提示词推理首帧画面描述。';
+
+  const currentCategoryLabel = inferenceCategory === 'video' ? '视频提示词' : '首帧提示词';
+  const currentCategoryHint = inferenceCategory === 'video'
+    ? '根据台词推理镜头运动和动作描述。'
+    : '根据台词和视频提示词推理首帧画面描述。';
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 via-zinc-900/50 to-zinc-950/60 p-4 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/20">
+          <Wand2 className="w-4.5 h-4.5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-medium text-zinc-100">AI 推理设置</h3>
+          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+            配置视频提示词和首帧提示词的推理模板。
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.10] via-cyan-500/[0.04] to-zinc-900/70 p-3 space-y-2 shadow-[0_10px_24px_rgba(8,145,178,0.10)]">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-semibold text-cyan-200">推理模型</div>
+            <div className="text-[10px] text-zinc-400 mt-0.5">与设置中心同步，影响当前账号大模型推理调用。</div>
+          </div>
+          {savingModelConfig ? <Loader2 className="w-4 h-4 animate-spin text-cyan-300 flex-shrink-0" /> : null}
+        </div>
+
+        {loadingModelConfig ? (
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            正在加载模型配置...
+          </div>
+        ) : !modelConfig ? (
+          <div className="space-y-2">
+            <div className="text-xs text-red-300">{modelConfigError || "获取推理模型配置失败，请稍后重试。"}</div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              onClick={loadInferenceModelConfig}
+              disabled={savingModelConfig}
+            >
+              重新加载
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Select
+              value={selectedModelValue}
+              onValueChange={handleChangeInferenceModel}
+              disabled={savingModelConfig}
+            >
+              <SelectTrigger className="h-9 border-zinc-700 bg-zinc-950/70 text-zinc-100">
+                <SelectValue placeholder="请选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SYSTEM_DEFAULT_MODEL_VALUE}>
+                  跟随系统默认（{systemDefaultModelName}）
+                </SelectItem>
+                {(modelConfig.models || []).map((model) => (
+                  <SelectItem key={model.id} value={model.modelCode}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-400">
+              <span>生效模型：{effectiveModel ? effectiveModel.modelName : selectedModelName}</span>
+              {effectiveModel?.pricePerThousandTokens != null && (
+                <span>{effectiveModel.pricePerThousandTokens} 漫币 / 1K tokens</span>
+              )}
+            </div>
+
+            {!!modelConfig.savedModel && modelConfig.savedModel !== modelConfig.selectedModel && (
+              <div className="text-[10px] text-amber-200">
+                已保存模型不可用，当前已自动回退到可用模型：{selectedModelName}
+              </div>
+            )}
+
+            {modelConfigError ? <div className="text-[10px] text-red-300">{modelConfigError}</div> : null}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex p-1 rounded-lg bg-zinc-900/80 border border-zinc-800">
+          <button
+            onClick={() => setInferenceCategory('video')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === 'video'
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <Video className="w-3.5 h-3.5" />
+            视频提示词
+          </button>
+          <button
+            onClick={() => setInferenceCategory('firstFrame')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === 'firstFrame'
+                ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            首帧提示词
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          当前类型：{currentCategoryLabel}。{currentCategoryHint}
+        </p>
+      </div>
+
+      <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+        <button
+          onClick={() => setActiveTab('system')}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === 'system'
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          系统模板
+        </button>
+        <button
+          onClick={() => setActiveTab('user')}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === 'user'
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          我的模板
+        </button>
+      </div>
+
+      <div className="min-h-[200px]">
+        {activeTab === 'system' ? (
+          <div className="space-y-2">
+            {!loadingSystem && systemTemplates.length > 0 && (
+              <div className="flex items-center justify-between px-1 mb-1">
+                <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">系统预设</span>
+                <span className="text-[10px] text-zinc-600">{systemTemplates.length}</span>
+              </div>
+            )}
+
+            {loadingSystem ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorSystem ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorSystem}</p>
+              </div>
+            ) : systemTemplates.length === 0 ? (
+              <div className="p-8 text-center text-zinc-500">
+                <p className="text-xs">暂无系统模板</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {systemTemplates.map((template) => {
+                  const isSelected = selectedType === 'system' && selectedId === template.templateCode;
+                  return (
+                    <button
+                      key={template.templateCode}
+                      onClick={() => handleSelectTemplate('system', template.templateCode)}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
+                              {template.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1 mb-1">
+              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">自定义</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800"
+                onClick={handleOpenCreate}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                新建
+              </Button>
+            </div>
+
+            {loadingUser ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorUser ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorUser}</p>
+                <Button size="sm" variant="ghost" className="mt-2 text-xs h-7" onClick={loadUserTemplates}>
+                  重试
+                </Button>
+              </div>
+            ) : userTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30">
+                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
+                  <Sparkles className="w-5 h-5 text-zinc-600" />
+                </div>
+                <p className="text-xs text-zinc-500 mb-3">还没有自定义模板</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  onClick={handleOpenCreate}
+                >
+                  创建第一个模板
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {userTemplates.map((template) => {
+                  const isSelected = selectedType === 'user' && selectedId === String(template.id);
+                  return (
+                    <div
+                      key={template.id}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-violet-500/30 ring-1 ring-violet-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => handleSelectTemplate('user', String(template.id))}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-violet-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-violet-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
+                              {template.description}
+                            </p>
+                          )}
+                        </button>
+
+                        <div className="flex gap-1 pl-2 border-l border-zinc-800 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(template); }}
+                            className="p-1.5 rounded-md hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"
+                            title="编辑"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(template); }}
+                            className="p-1.5 rounded-md hover:bg-red-500/20 text-zinc-500 hover:text-red-400"
+                            title="删除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {editModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-zinc-900 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-100">
+                {editingTemplate ? '编辑模板' : '新建模板'}
+              </h3>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">模板名称</label>
+                  <Input
+                    value={formName}
+                    onChange={e => setFormName(e.target.value)}
+                    placeholder="例如：动作片风格"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">描述（可选）</label>
+                  <Input
+                    value={formDesc}
+                    onChange={e => setFormDesc(e.target.value)}
+                    placeholder="简要描述这个模板的用途"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">推理提示词</label>
+                  <Textarea
+                    value={formPrompt}
+                    onChange={e => setFormPrompt(e.target.value)}
+                    placeholder="输入 AI 推理时使用的系统提示词..."
+                    className="bg-zinc-900 border-zinc-800 min-h-[180px] resize-none focus:ring-zinc-700 focus:border-zinc-700 font-mono text-xs leading-relaxed"
+                  />
+                  <p className="text-[10px] text-zinc-500">
+                    AI 将根据此提示词分析台词并生成视频运动或首帧描述。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-zinc-900/50 border-t border-zinc-900 flex justify-end gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditModalOpen(false)}
+                disabled={saving}
+                className="text-zinc-400 hover:text-zinc-200"
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+                onClick={handleSaveTemplate}
+                disabled={saving}
+              >
+                {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                {editingTemplate ? '保存修改' : '创建模板'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 via-zinc-900/50 to-zinc-950/60 p-4 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/20">
+          <Wand2 className="w-4.5 h-4.5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-medium text-zinc-100">AI 推理设置</h3>
+          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+            配置视频提示词和首帧提示词的推理模板。
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.10] via-cyan-500/[0.04] to-zinc-900/70 p-3 space-y-2 shadow-[0_10px_24px_rgba(8,145,178,0.10)]">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-semibold text-cyan-200">推理模型</div>
+            <div className="text-[10px] text-zinc-400 mt-0.5">与设置中心同步，影响当前账号大模型推理调用。</div>
+          </div>
+          {savingModelConfig ? <Loader2 className="w-4 h-4 animate-spin text-cyan-300 flex-shrink-0" /> : null}
+        </div>
+
+        {loadingModelConfig ? (
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            正在加载模型配置...
+          </div>
+        ) : !modelConfig ? (
+          <div className="space-y-2">
+            <div className="text-xs text-red-300">{modelConfigError || "获取推理模型配置失败，请稍后重试。"}</div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              onClick={loadInferenceModelConfig}
+              disabled={savingModelConfig}
+            >
+              重新加载
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Select
+              value={selectedModelValue}
+              onValueChange={handleChangeInferenceModel}
+              disabled={savingModelConfig}
+            >
+              <SelectTrigger className="h-9 border-zinc-700 bg-zinc-950/70 text-zinc-100">
+                <SelectValue placeholder="请选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SYSTEM_DEFAULT_MODEL_VALUE}>
+                  跟随系统默认（{systemDefaultModelName}）
+                </SelectItem>
+                {(modelConfig.models || []).map((model) => (
+                  <SelectItem key={model.id} value={model.modelCode}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-400">
+              <span>生效模型：{effectiveModel ? effectiveModel.modelName : selectedModelName}</span>
+              {effectiveModel?.pricePerThousandTokens != null && (
+                <span>{effectiveModel.pricePerThousandTokens} 漫币 / 1K tokens</span>
+              )}
+            </div>
+
+            {!!modelConfig.savedModel && modelConfig.savedModel !== modelConfig.selectedModel && (
+              <div className="text-[10px] text-amber-200">
+                已保存模型不可用，当前已自动回退到可用模型：{selectedModelName}
+              </div>
+            )}
+
+            {modelConfigError ? <div className="text-[10px] text-red-300">{modelConfigError}</div> : null}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex p-1 rounded-lg bg-zinc-900/80 border border-zinc-800">
+          <button
+            onClick={() => setInferenceCategory('video')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === 'video'
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <Video className="w-3.5 h-3.5" />
+            视频提示词
+          </button>
+          <button
+            onClick={() => setInferenceCategory('firstFrame')}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === 'firstFrame'
+                ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            首帧提示词
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          当前类型：{currentCategoryLabel}。{currentCategoryHint}
+        </p>
+      </div>
+
+      <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+        <button
+          onClick={() => setActiveTab('system')}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === 'system'
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          系统模板
+        </button>
+        <button
+          onClick={() => setActiveTab('user')}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === 'user'
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          我的模板
+        </button>
+      </div>
+
+      <div className="min-h-[200px]">
+        {activeTab === 'system' ? (
+          <div className="space-y-2">
+            {!loadingSystem && systemTemplates.length > 0 && (
+              <div className="flex items-center justify-between px-1 mb-1">
+                <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">系统预设</span>
+                <span className="text-[10px] text-zinc-600">{systemTemplates.length}</span>
+              </div>
+            )}
+
+            {loadingSystem ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorSystem ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorSystem}</p>
+              </div>
+            ) : systemTemplates.length === 0 ? (
+              <div className="p-8 text-center text-zinc-500">
+                <p className="text-xs">暂无系统模板</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {systemTemplates.map((template) => {
+                  const isSelected = selectedType === 'system' && selectedId === template.templateCode;
+                  return (
+                    <button
+                      key={template.templateCode}
+                      onClick={() => handleSelectTemplate('system', template.templateCode)}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
+                              {template.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1 mb-1">
+              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">自定义</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800"
+                onClick={handleOpenCreate}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                新建
+              </Button>
+            </div>
+
+            {loadingUser ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorUser ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorUser}</p>
+                <Button size="sm" variant="ghost" className="mt-2 text-xs h-7" onClick={loadUserTemplates}>
+                  重试
+                </Button>
+              </div>
+            ) : userTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30">
+                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
+                  <Sparkles className="w-5 h-5 text-zinc-600" />
+                </div>
+                <p className="text-xs text-zinc-500 mb-3">还没有自定义模板</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  onClick={handleOpenCreate}
+                >
+                  创建第一个模板
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {userTemplates.map((template) => {
+                  const isSelected = selectedType === 'user' && selectedId === String(template.id);
+                  return (
+                    <div
+                      key={template.id}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-violet-500/30 ring-1 ring-violet-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <button
+                          className="flex-1 min-w-0 text-left"
+                          onClick={() => handleSelectTemplate('user', String(template.id))}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-violet-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-violet-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
+                              {template.description}
+                            </p>
+                          )}
+                        </button>
+
+                        <div className="flex gap-1 pl-2 border-l border-zinc-800 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(template); }}
+                            className="p-1.5 rounded-md hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"
+                            title="编辑"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(template); }}
+                            className="p-1.5 rounded-md hover:bg-red-500/20 text-zinc-500 hover:text-red-400"
+                            title="删除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {editModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-zinc-900 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-100">
+                {editingTemplate ? '编辑模板' : '新建模板'}
+              </h3>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">模板名称</label>
+                  <Input
+                    value={formName}
+                    onChange={e => setFormName(e.target.value)}
+                    placeholder="例如：动作片风格"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">描述（可选）</label>
+                  <Input
+                    value={formDesc}
+                    onChange={e => setFormDesc(e.target.value)}
+                    placeholder="简要描述这个模板的用途"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">推理提示词</label>
+                  <Textarea
+                    value={formPrompt}
+                    onChange={e => setFormPrompt(e.target.value)}
+                    placeholder="输入 AI 推理时使用的系统提示词..."
+                    className="bg-zinc-900 border-zinc-800 min-h-[180px] resize-none focus:ring-zinc-700 focus:border-zinc-700 font-mono text-xs leading-relaxed"
+                  />
+                  <p className="text-[10px] text-zinc-500">
+                    AI 将根据此提示词分析台词并生成视频运动或首帧描述。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-zinc-900/50 border-t border-zinc-900 flex justify-end gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditModalOpen(false)}
+                disabled={saving}
+                className="text-zinc-400 hover:text-zinc-200"
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+                onClick={handleSaveTemplate}
+                disabled={saving}
+              >
+                {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                {editingTemplate ? '保存修改' : '创建模板'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  */
   return (
     <div className="p-5 space-y-6">
       {/* 画风配置 */}
@@ -2341,6 +3156,7 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
 
 // 推理设置面板 - 支持视频提示词推理和首帧提示词推理两种类型的模板配置
 type InferenceCategory = 'video' | 'firstFrame';
+const SYSTEM_DEFAULT_MODEL_VALUE = "__SYSTEM_DEFAULT__";
 
 interface UserInferenceTemplate {
   id: number;
@@ -2349,6 +3165,21 @@ interface UserInferenceTemplate {
   systemPrompt: string;
   isDefault?: boolean;
   category?: string; // VIDEO_INFERENCE | FIRST_FRAME_INFERENCE
+}
+
+interface InferenceModelOption {
+  id: number;
+  modelCode: string;
+  modelName: string;
+  pricePerThousandTokens?: number;
+  isDefault?: boolean;
+}
+
+interface InferenceModelConfigResponse {
+  models: InferenceModelOption[];
+  savedModel?: string | null;
+  selectedModel: string;
+  systemDefaultModel: string;
 }
 
 function InferencePanel({
@@ -2390,6 +3221,12 @@ function InferencePanel({
   const [errorFirstFrameUser, setErrorFirstFrameUser] = useState<string | null>(null);
   const [selectedFirstFrameType, setSelectedFirstFrameType] = useState<'system' | 'user'>('system');
   const [selectedFirstFrameId, setSelectedFirstFrameId] = useState<string>(selectedFirstFrameInferenceTemplate);
+
+  const [modelConfig, setModelConfig] = useState<InferenceModelConfigResponse | null>(null);
+  const [selectedModelValue, setSelectedModelValue] = useState<string>(SYSTEM_DEFAULT_MODEL_VALUE);
+  const [loadingModelConfig, setLoadingModelConfig] = useState(true);
+  const [savingModelConfig, setSavingModelConfig] = useState(false);
+  const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   
   // 新建/编辑弹窗
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -2408,6 +3245,53 @@ function InferencePanel({
   const errorUser = inferenceCategory === 'video' ? errorVideoUser : errorFirstFrameUser;
   const selectedType = inferenceCategory === 'video' ? selectedVideoType : selectedFirstFrameType;
   const selectedId = inferenceCategory === 'video' ? selectedVideoId : selectedFirstFrameId;
+
+  const effectiveModel = useMemo<any>(() => {
+    if (!modelConfig) return null;
+    return modelConfig.models.find((model) => model.modelCode === modelConfig.selectedModel) ?? null;
+  }, [modelConfig]);
+
+  const modelNameByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    (modelConfig?.models || []).forEach((item) => {
+      map.set(item.modelCode, item.modelName);
+    });
+    return map;
+  }, [modelConfig]);
+
+  const systemDefaultModelName = useMemo(() => {
+    if (!modelConfig?.systemDefaultModel) return "未配置";
+    return modelNameByCode.get(modelConfig.systemDefaultModel) || "未知模型";
+  }, [modelConfig, modelNameByCode]);
+
+  const selectedModelName = useMemo(() => {
+    if (!modelConfig?.selectedModel) return "未配置";
+    return modelNameByCode.get(modelConfig.selectedModel) || "未知模型";
+  }, [modelConfig, modelNameByCode]);
+
+  const loadInferenceModelConfig = useCallback(async () => {
+    try {
+      setLoadingModelConfig(true);
+      setModelConfigError(null);
+      const response = await api.get<InferenceModelConfigResponse>("/user/inference-model-config");
+      const data = response.data;
+      setModelConfig(data);
+      setSelectedModelValue(data.savedModel || SYSTEM_DEFAULT_MODEL_VALUE);
+    } catch (error: any) {
+      const backendMessage = error?.response?.data?.error || error?.message;
+      setModelConfigError(
+        backendMessage
+          ? `获取推理模型配置失败：${backendMessage}`
+          : "获取推理模型配置失败，请刷新后重试。"
+      );
+    } finally {
+      setLoadingModelConfig(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInferenceModelConfig();
+  }, [loadInferenceModelConfig]);
   
   // 加载视频推理系统模板
   useEffect(() => {
@@ -2493,6 +3377,28 @@ function InferencePanel({
       loadFirstFrameUserTemplates();
     }
   };
+
+  const handleChangeInferenceModel = async (value: string) => {
+    const previousValue = selectedModelValue;
+    setSelectedModelValue(value);
+    setSavingModelConfig(true);
+    setModelConfigError(null);
+
+    try {
+      await api.put("/user/inference-model-config", {
+        modelCode: value === SYSTEM_DEFAULT_MODEL_VALUE ? "" : value,
+      });
+      await loadInferenceModelConfig();
+      toast("推理模型已保存", "success");
+    } catch (error: any) {
+      const message = error?.response?.data?.error || "保存推理模型失败，请稍后再试。";
+      setSelectedModelValue(previousValue);
+      setModelConfigError(message);
+      toast(message, "error");
+    } finally {
+      setSavingModelConfig(false);
+    }
+  };
   
   // 切换到用户模板 tab 时加载
   useEffect(() => {
@@ -2527,6 +3433,16 @@ function InferencePanel({
       setFormPrompt('根据台词和镜头描述生成视频运动提示词。要求：\n1. 描述角色动作和表情变化\n2. 包含镜头运动（推/拉/摇/移等）\n3. 体现台词的情感\n4. 直接输出提示词，不要解释');
     } else {
       setFormPrompt('根据台词和视频提示词，生成首帧画面描述。要求：\n1. 描述画面构图和场景\n2. 描述角色姿态和表情\n3. 包含光影和氛围\n4. 直接输出提示词，不要解释');
+    }
+    // 覆盖默认提示词，修复历史乱码文案
+    if (inferenceCategory === "video") {
+      setFormPrompt(
+        "根据台词和镜头描述生成视频运动提示词。要求：\n1. 描述角色动作和表情变化\n2. 包含镜头运动（推/拉/摇/移等）\n3. 体现台词情绪\n4. 直接输出提示词，不要解释"
+      );
+    } else {
+      setFormPrompt(
+        "根据台词和视频提示词生成首帧画面描述。要求：\n1. 描述画面构图和场景\n2. 描述角色姿态和表情\n3. 包含光影和氛围\n4. 直接输出提示词，不要解释"
+      );
     }
     setEditModalOpen(true);
   };
@@ -2621,12 +3537,371 @@ function InferencePanel({
     }
   };
   
+  const compactCategoryLabel = inferenceCategory === "video" ? "视频提示词" : "首帧提示词";
+  const compactCategoryHint = inferenceCategory === "video"
+    ? "根据台词推理镜头运动和动作描述。"
+    : "根据台词和视频提示词推理首帧画面描述。";
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 via-zinc-900/50 to-zinc-950/60 p-4 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/20">
+          <Wand2 className="w-4.5 h-4.5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="text-sm font-medium text-zinc-100">AI 推理设置</h3>
+          <p className="text-xs text-zinc-500 mt-1 leading-relaxed">配置视频提示词和首帧提示词的推理模板。</p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.10] via-cyan-500/[0.04] to-zinc-900/70 p-3 space-y-2 shadow-[0_10px_24px_rgba(8,145,178,0.10)]">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-semibold text-cyan-200">推理模型</div>
+            <div className="text-[10px] text-zinc-400 mt-0.5">与设置中心同步，影响当前账号大模型推理调用。</div>
+          </div>
+          {savingModelConfig ? <Loader2 className="w-4 h-4 animate-spin text-cyan-300 flex-shrink-0" /> : null}
+        </div>
+
+        {loadingModelConfig ? (
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            正在加载模型配置...
+          </div>
+        ) : !modelConfig ? (
+          <div className="space-y-2">
+            <div className="text-xs text-red-300">{modelConfigError || "获取推理模型配置失败，请稍后重试。"}</div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              onClick={loadInferenceModelConfig}
+              disabled={savingModelConfig}
+            >
+              重新加载
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Select
+              value={selectedModelValue}
+              onValueChange={handleChangeInferenceModel}
+              disabled={savingModelConfig}
+            >
+              <SelectTrigger className="h-9 border-zinc-700 bg-zinc-950/70 text-zinc-100">
+                <SelectValue placeholder="请选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SYSTEM_DEFAULT_MODEL_VALUE}>
+                  跟随系统默认（{systemDefaultModelName}）
+                </SelectItem>
+                {(modelConfig.models || []).map((model) => (
+                  <SelectItem key={model.id} value={model.modelCode}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-400">
+              <span>生效模型：{effectiveModel ? effectiveModel.modelName : selectedModelName}</span>
+              {effectiveModel?.pricePerThousandTokens != null && <span>{effectiveModel.pricePerThousandTokens} 漫币 / 1K tokens</span>}
+            </div>
+            {!!modelConfig.savedModel && modelConfig.savedModel !== modelConfig.selectedModel && (
+              <div className="text-[10px] text-amber-200">已保存模型不可用，当前已自动回退到可用模型：{selectedModelName}</div>
+            )}
+            {modelConfigError ? <div className="text-[10px] text-red-300">{modelConfigError}</div> : null}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <div className="flex p-1 rounded-lg bg-zinc-900/80 border border-zinc-800">
+          <button
+            onClick={() => setInferenceCategory("video")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === "video"
+                ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <Video className="w-3.5 h-3.5" />
+            视频提示词
+          </button>
+          <button
+            onClick={() => setInferenceCategory("firstFrame")}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-medium transition-all",
+              inferenceCategory === "firstFrame"
+                ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            首帧提示词
+          </button>
+        </div>
+        <p className="text-[10px] text-zinc-500">
+          当前类型：{compactCategoryLabel}。{compactCategoryHint}
+        </p>
+      </div>
+
+      <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+        <button
+          onClick={() => setActiveTab("system")}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === "system"
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          系统模板
+        </button>
+        <button
+          onClick={() => setActiveTab("user")}
+          className={cn(
+            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
+            activeTab === "user"
+              ? "bg-zinc-800 text-zinc-100 shadow-sm"
+              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+          )}
+        >
+          我的模板
+        </button>
+      </div>
+
+      <div className="min-h-[200px]">
+        {activeTab === "system" ? (
+          <div className="space-y-2">
+            {!loadingSystem && systemTemplates.length > 0 && (
+              <div className="flex items-center justify-between px-1 mb-1">
+                <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">系统预设</span>
+                <span className="text-[10px] text-zinc-600">{systemTemplates.length}</span>
+              </div>
+            )}
+            {loadingSystem ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorSystem ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorSystem}</p>
+              </div>
+            ) : systemTemplates.length === 0 ? (
+              <div className="p-8 text-center text-zinc-500">
+                <p className="text-xs">暂无系统模板</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {systemTemplates.map((template) => {
+                  const isSelected = selectedType === "system" && selectedId === template.templateCode;
+                  return (
+                    <button
+                      key={template.templateCode}
+                      onClick={() => handleSelectTemplate("system", template.templateCode)}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{template.description}</p>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1 mb-1">
+              <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">自定义</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800"
+                onClick={handleOpenCreate}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                新建
+              </Button>
+            </div>
+            {loadingUser ? (
+              <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
+                <Loader2 className="w-5 h-5 animate-spin mb-2" />
+                <span className="text-xs">加载中...</span>
+              </div>
+            ) : errorUser ? (
+              <div className="p-4 rounded-lg bg-red-500/5 border border-red-500/10 text-center">
+                <p className="text-xs text-red-400">{errorUser}</p>
+                <Button size="sm" variant="ghost" className="mt-2 text-xs h-7" onClick={loadUserTemplates}>
+                  重试
+                </Button>
+              </div>
+            ) : userTemplates.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30">
+                <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center mb-3">
+                  <Sparkles className="w-5 h-5 text-zinc-600" />
+                </div>
+                <p className="text-xs text-zinc-500 mb-3">还没有自定义模板</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+                  onClick={handleOpenCreate}
+                >
+                  创建第一个模板
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {userTemplates.map((template) => {
+                  const isSelected = selectedType === "user" && selectedId === String(template.id);
+                  return (
+                    <div
+                      key={template.id}
+                      className={cn(
+                        "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
+                        isSelected
+                          ? "bg-zinc-800/80 border-violet-500/30 ring-1 ring-violet-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                      )}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500" />}
+                      <div className="flex items-start gap-3 pl-1">
+                        <button className="flex-1 min-w-0 text-left" onClick={() => handleSelectTemplate("user", String(template.id))}>
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "text-sm font-medium transition-colors",
+                              isSelected ? "text-violet-400" : "text-zinc-300 group-hover:text-zinc-200"
+                            )}>
+                              {template.templateName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-violet-500 ml-auto" />}
+                          </div>
+                          {template.description && (
+                            <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{template.description}</p>
+                          )}
+                        </button>
+                        <div className="flex gap-1 pl-2 border-l border-zinc-800 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(template); }}
+                            className="p-1.5 rounded-md hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"
+                            title="编辑"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(template); }}
+                            className="p-1.5 rounded-md hover:bg-red-500/20 text-zinc-500 hover:text-red-400"
+                            title="删除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {editModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-zinc-900 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-100">{editingTemplate ? "编辑模板" : "新建模板"}</h3>
+              <button onClick={() => setEditModalOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">模板名称</label>
+                  <Input
+                    value={formName}
+                    onChange={e => setFormName(e.target.value)}
+                    placeholder="例如：动作片风格"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">描述（可选）</label>
+                  <Input
+                    value={formDesc}
+                    onChange={e => setFormDesc(e.target.value)}
+                    placeholder="简要描述这个模板的用途"
+                    className="bg-zinc-900 border-zinc-800 focus:ring-zinc-700 focus:border-zinc-700"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-zinc-400">推理提示词</label>
+                  <Textarea
+                    value={formPrompt}
+                    onChange={e => setFormPrompt(e.target.value)}
+                    placeholder="输入 AI 推理时使用的系统提示词..."
+                    className="bg-zinc-900 border-zinc-800 min-h-[180px] resize-none focus:ring-zinc-700 focus:border-zinc-700 font-mono text-xs leading-relaxed"
+                  />
+                  <p className="text-[10px] text-zinc-500">AI 将根据此提示词分析台词并生成视频运动或首帧描述。</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-900/50 border-t border-zinc-900 flex justify-end gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditModalOpen(false)}
+                disabled={saving}
+                className="text-zinc-400 hover:text-zinc-200"
+              >
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
+                onClick={handleSaveTemplate}
+                disabled={saving}
+              >
+                {saving && <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />}
+                {editingTemplate ? "保存修改" : "创建模板"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="p-5 space-y-6">
       {/* 顶部功能说明 - 极简风格 */}
-      <div className="flex items-start gap-4 pb-4 border-b border-zinc-800">
+      <div className="rounded-2xl border border-zinc-800/80 bg-gradient-to-br from-zinc-900/80 via-zinc-900/50 to-zinc-950/60 p-4 flex items-start gap-4">
         <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0 border border-emerald-500/20">
-          <Wand2 className="w-5 h-5 text-emerald-500" />
+          <Wand2 className="w-5 h-5 text-emerald-400" />
         </div>
         <div>
           <h3 className="text-sm font-medium text-zinc-100">AI 推理设置</h3>
@@ -2670,6 +3945,79 @@ function InferencePanel({
             ? '根据台词推理镜头运动和动作描述' 
             : '根据台词和视频提示词推理首尾帧画面'}
         </p>
+      </div>
+
+      {/* 推理模型配置（与设置中心同步） */}
+      <div className="rounded-2xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/[0.10] via-cyan-500/[0.04] to-zinc-900/70 p-4 space-y-3 shadow-[0_12px_32px_rgba(8,145,178,0.10)]">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-semibold text-cyan-200">推理模型</div>
+            <div className="text-[11px] text-zinc-400 mt-1">与设置中心同步，影响当前账号的大模型推理调用。</div>
+          </div>
+          {savingModelConfig ? <Loader2 className="w-4 h-4 animate-spin text-cyan-300 flex-shrink-0" /> : null}
+        </div>
+
+        {loadingModelConfig ? (
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            加载中...
+          </div>
+        ) : !modelConfig ? (
+          <div className="space-y-2">
+            <div className="text-xs text-red-300">{modelConfigError || "获取推理模型配置失败，请稍后重试。"}</div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              onClick={loadInferenceModelConfig}
+              disabled={savingModelConfig}
+            >
+              重新加载
+            </Button>
+          </div>
+        ) : (
+          <>
+            <Select
+              value={selectedModelValue}
+              onValueChange={handleChangeInferenceModel}
+              disabled={savingModelConfig}
+            >
+              <SelectTrigger className="h-10 border-zinc-700 bg-zinc-950/70 text-zinc-100">
+                <SelectValue placeholder="请选择模型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SYSTEM_DEFAULT_MODEL_VALUE}>
+                  跟随系统默认（{systemDefaultModelName}）
+                </SelectItem>
+                {(modelConfig?.models || []).map((model) => (
+                  <SelectItem key={model.id} value={model.modelCode}>
+                    {model.modelName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500">当前生效模型</div>
+              <div className="mt-1 text-xs text-zinc-200">
+                {effectiveModel ? effectiveModel.modelName : selectedModelName}
+              </div>
+              {effectiveModel?.pricePerThousandTokens != null && (
+                <div className="mt-1 text-[10px] text-zinc-500">
+                  价格：{effectiveModel.pricePerThousandTokens} 漫币 / 1K tokens
+                </div>
+              )}
+              {!!modelConfig?.savedModel && modelConfig?.savedModel !== modelConfig?.selectedModel && (
+                <div className="mt-1 text-[10px] text-amber-200">
+                  已保存模型不可用，已自动回退到可用模型：{selectedModelName}
+                </div>
+              )}
+            </div>
+
+            {modelConfigError ? <div className="text-[10px] text-red-300">{modelConfigError}</div> : null}
+          </>
+        )}
       </div>
 
       {/* Tab 切换 - 朴素风格 */}
@@ -3040,7 +4388,7 @@ function TasksPanel({ workflow }: { workflow: WorkflowData }) {
       const statusParam = activeTab === "all" ? "" : activeTab === "processing" ? "PROCESSING" : activeTab === "completed" ? "COMPLETED" : "FAILED";
       const res = await api.get(`/ai-agent/workflows/${workflow.id}/tasks`, {
         params: { status: statusParam || undefined, limit: 50 },
-        // 防止后端卡住/网络挂起导致界面一直“加载中”
+        // 防止后端卡住/网络挂起导致界面一直"加载中"
         timeout: 15_000,
       });
       setTasks(res.data || []);
@@ -4402,7 +5750,7 @@ function ExportPanel({ workflow }: { workflow: WorkflowData }) {
           const rawText = typeof item?.text === "string" ? item.text : "";
           const cleanText = rawText
             .replace(/(\([^)]*\)|（[^）]*）|\[[^\]]*\]|【[^】]*】)/g, " ")
-            .replace(/[“”"‘’]/g, "")
+            .replace(/["""‘’]/g, "")
             .replace(/^[\s\-—–:：]+/, "")
             .replace(/\s+/g, " ")
             .trim();

@@ -15,6 +15,8 @@ import {
   upsertScriptWorkshopProject,
 } from "@/lib/script-workshop/projects-api";
 import type { ScriptWorkshopSettings } from "@/lib/script-workshop/types";
+import NovelImportDialog from "./novel-import-dialog";
+import type { NovelChapter, NovelAdaptationGroup } from "@/lib/script-workshop/types";
 
 const DEFAULT_SETTINGS: ScriptWorkshopSettings = {
   visualStyle: "anime",
@@ -55,6 +57,7 @@ export default function ScriptWorkshopListPage() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [novelImportOpen, setNovelImportOpen] = useState(false);
 
   const loadProjects = async () => {
     setLoading(true);
@@ -134,6 +137,41 @@ export default function ScriptWorkshopListPage() {
     }
   };
 
+  const handleNovelImport = async (params: {
+    title: string;
+    chapters: NovelChapter[];
+    groups: NovelAdaptationGroup[];
+    episodesCount: number;
+  }) => {
+    const id = newProjectId();
+    const now = new Date().toISOString();
+    const record: ScriptWorkshopProjectRecord = {
+      id,
+      title: params.title,
+      sourceText: "",
+      settings: {
+        ...DEFAULT_SETTINGS,
+        episodesCount: params.episodesCount,
+      },
+      createdAt: now,
+      updatedAt: now,
+      mode: "novel",
+      outlines: [],
+      episodeScripts: {},
+      novelChapters: params.chapters,
+      novelAdaptationGroups: params.groups,
+    };
+
+    try {
+      await upsertScriptWorkshopProject(id, record);
+      setNovelImportOpen(false);
+      router.push(`/script-workshop/editor?projectId=${encodeURIComponent(id)}`);
+    } catch (err) {
+      console.error("create novel project failed", err);
+      toast("创建失败，请稍后重试", "error");
+    }
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#04060a] text-white">
       <div className="pointer-events-none absolute inset-0">
@@ -161,8 +199,9 @@ export default function ScriptWorkshopListPage() {
               <Button
                 variant="outline"
                 className="h-8 rounded-md border-[#2b313d] bg-[#0b1118]/85 px-3 text-[13px] text-zinc-300 hover:bg-[#121924] hover:text-zinc-100"
+                onClick={() => setNovelImportOpen(true)}
               >
-                导入/导出
+                小说改编
               </Button>
               <Button
                 onClick={() => setCreateOpen(true)}
@@ -228,7 +267,14 @@ export default function ScriptWorkshopListPage() {
                     <article
                       key={p.id}
                       className="group relative w-full max-w-[380px] cursor-pointer rounded-[16px] border border-[#383a46] bg-[linear-gradient(156deg,rgba(27,20,40,0.8),rgba(12,13,22,0.92)_58%,rgba(9,11,18,0.94))] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 hover:border-[#575c72] hover:shadow-[0_14px_24px_rgba(7,8,14,0.68)]"
-                      onClick={() => router.push(`/script-workshop/pipeline/${encodeURIComponent(p.id)}`)}
+                      onClick={() => {
+                        const hasScripts = Object.keys(p.episodeScripts || {}).length > 0;
+                        if (hasScripts) {
+                          router.push(`/script-workshop/pipeline/${encodeURIComponent(p.id)}`);
+                        } else {
+                          router.push(`/script-workshop/editor?projectId=${encodeURIComponent(p.id)}`);
+                        }
+                      }}
                     >
                       <button
                         className="absolute right-3 top-3 rounded-md p-0.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
@@ -353,6 +399,12 @@ export default function ScriptWorkshopListPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <NovelImportDialog
+        open={novelImportOpen}
+        onOpenChange={setNovelImportOpen}
+        onConfirm={handleNovelImport}
+      />
     </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Suspense, memo } from "react";
+import { Suspense, memo, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import Navbar from "./Navbar";
 import { ToastProvider } from "./ui/toast-provider";
 import { ConfirmProvider } from "./ui/confirm-dialog";
+import { prefetchRegisterSettings } from "@/lib/register-settings";
 
 // 简单的加载占位符，保持布局稳定
 const PageLoader = memo(function PageLoader() {
@@ -27,6 +28,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   // Script Workshop: list page uses normal app layout; editor/pipeline use full-screen workbench.
   const isScriptWorkshopFullScreenPage =
     pathname?.startsWith("/script-workshop/editor") || pathname?.startsWith("/script-workshop/pipeline");
+
+  useEffect(() => {
+    prefetchRegisterSettings();
+  }, []);
 
   if (isAuthPage) {
     return (

@@ -152,7 +152,7 @@ export default function StoryboardPage() {
 
     fetchWorkflowRef.current();
 
-    if (message.type.includes("FAILED") && message.error) {
+    if (message.type.includes("FAILED") && !message.type.includes("SHOT_VIDEO") && message.error) {
       toast(normalizeDisplayText(message.error, "执行失败"), "error");
     }
   }, [toast]);

@@ -7,16 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import api from "@/lib/api";
-
-type RegisterSettings = {
-  emailRegisterEnabled: boolean;
-};
-
-type CaptchaResponse = {
-  captchaId: string;
-  imageBase64: string;
-  expireSeconds: number;
-};
+import { fetchRegisterSettings, getCachedRegisterSettings, type RegisterSettings } from "@/lib/register-settings";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -24,43 +15,29 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
-  const [captchaId, setCaptchaId] = useState("");
-  const [captchaCode, setCaptchaCode] = useState("");
-  const [captchaImage, setCaptchaImage] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [initLoading, setInitLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [sendingEmailCode, setSendingEmailCode] = useState(false);
   const [emailCountDown, setEmailCountDown] = useState(0);
-  const [settings, setSettings] = useState<RegisterSettings>({ emailRegisterEnabled: false });
+  const [settings, setSettings] = useState<RegisterSettings>(
+    () => getCachedRegisterSettings() || { emailRegisterEnabled: false }
+  );
 
   const loadSettings = useCallback(async () => {
-    const res = await api.get<RegisterSettings>("/auth/register-settings");
-    setSettings({ emailRegisterEnabled: !!res.data?.emailRegisterEnabled });
-  }, []);
-
-  const loadCaptcha = useCallback(async () => {
-    const res = await api.get<CaptchaResponse>("/auth/captcha");
-    setCaptchaId(res.data?.captchaId || "");
-    setCaptchaImage(res.data?.imageBase64 || "");
-    setCaptchaCode("");
+    const nextSettings = await fetchRegisterSettings();
+    setSettings(nextSettings);
   }, []);
 
   useEffect(() => {
     let mounted = true;
     const bootstrap = async () => {
-      setInitLoading(true);
       setError("");
       try {
-        await Promise.all([loadSettings(), loadCaptcha()]);
+        await loadSettings();
       } catch (err: any) {
         if (mounted) {
           setError(err.response?.data?.error || "注册页初始化失败，请刷新后重试");
-        }
-      } finally {
-        if (mounted) {
-          setInitLoading(false);
         }
       }
     };
@@ -69,7 +46,7 @@ export default function RegisterPage() {
     return () => {
       mounted = false;
     };
-  }, [loadSettings, loadCaptcha]);
+  }, [loadSettings]);
 
   useEffect(() => {
     if (emailCountDown <= 0) {
@@ -87,23 +64,16 @@ export default function RegisterPage() {
       setError("请先填写邮箱");
       return;
     }
-    if (!captchaId || !captchaCode.trim()) {
-      setError("请先填写图形验证码");
-      return;
-    }
 
     setSendingEmailCode(true);
     try {
       const res = await api.post("/auth/email-code", {
-        email: email.trim(),
-        captchaId,
-        captchaCode: captchaCode.trim(),
+        email: email.trim()
       });
       setMessage(res.data?.message || "邮箱验证码已发送，请注意查收");
       setEmailCountDown(60);
     } catch (err: any) {
       setError(err.response?.data?.error || "发送邮箱验证码失败");
-      await loadCaptcha();
     } finally {
       setSendingEmailCode(false);
     }
@@ -115,11 +85,6 @@ export default function RegisterPage() {
     setError("");
     setMessage("");
 
-    if (!captchaId || !captchaCode.trim()) {
-      setError("请填写图形验证码");
-      setLoading(false);
-      return;
-    }
     if (settings.emailRegisterEnabled && !email.trim()) {
       setError("当前已开启邮箱注册，请填写邮箱");
       setLoading(false);
@@ -134,9 +99,7 @@ export default function RegisterPage() {
     try {
       const payload: Record<string, string> = {
         username,
-        password,
-        captchaId,
-        captchaCode: captchaCode.trim(),
+        password
       };
       if (email.trim()) {
         payload.email = email.trim();
@@ -150,7 +113,6 @@ export default function RegisterPage() {
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.response?.data?.error || "注册失败，请稍后重试");
-      await loadCaptcha();
     } finally {
       setLoading(false);
     }
@@ -171,10 +133,7 @@ export default function RegisterPage() {
             <p className="mt-2 text-sm text-slate-300">填写以下信息完成注册</p>
           </div>
 
-          {initLoading ? (
-            <div className="py-8 text-center text-sm text-slate-400">正在加载注册配置...</div>
-          ) : (
-            <form onSubmit={handleRegister} className="space-y-4">
+          <form onSubmit={handleRegister} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-slate-200">
                   账号
@@ -249,35 +208,6 @@ export default function RegisterPage() {
                 </>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="captchaCode" className="text-slate-200">
-                  图形验证码
-                </Label>
-                <div className="grid grid-cols-[1fr_118px] gap-2">
-                  <Input
-                    id="captchaCode"
-                    type="text"
-                    placeholder="请输入图形验证码"
-                    required
-                    value={captchaCode}
-                    onChange={(e) => setCaptchaCode(e.target.value)}
-                    className="h-11 border-purple-400/25 bg-[#15122c] text-slate-100 placeholder:text-slate-400 focus-visible:ring-purple-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={loadCaptcha}
-                    className="h-11 overflow-hidden rounded-md border border-purple-300/30 bg-purple-500/10 text-xs text-purple-200"
-                    title="点击刷新验证码"
-                  >
-                    {captchaImage ? (
-                      <img src={captchaImage} alt="图形验证码" className="h-full w-full object-cover" />
-                    ) : (
-                      "换一张"
-                    )}
-                  </button>
-                </div>
-              </div>
-
               {message && (
                 <p className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-center text-sm text-emerald-300">
                   {message}
@@ -290,12 +220,11 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 className="h-11 w-full bg-gradient-to-r from-purple-600 to-fuchsia-500 text-white hover:from-purple-500 hover:to-fuchsia-400"
-                disabled={loading || initLoading}
+                disabled={loading}
               >
                 {loading ? "注册中..." : "注册并进入工作台"}
               </Button>
-            </form>
-          )}
+          </form>
 
           <div className="mt-6 border-t border-white/10 pt-4 text-center text-sm text-slate-300">
             已有账号？{" "}

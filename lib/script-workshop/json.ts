@@ -2,7 +2,6 @@ import type {
   ScriptWorkshopOutlineResult,
   ScriptWorkshopEpisodeScriptResult,
   ScriptWorkshopEpisodeOutline,
-  ScriptWorkshopShot,
 } from "./types";
 
 export function extractFirstJsonObject(text: string): string | null {
@@ -158,53 +157,15 @@ export function validateOutlineResult(
 }
 
 /**
- * Validate episode script result structure and return detailed error if invalid
+ * 分集脚本：直接取 AI 原始输出文本，不做 JSON 解析
  */
 export function validateEpisodeScriptResult(
-  data: any
+  raw: string,
+  index: number
 ): { ok: true; value: ScriptWorkshopEpisodeScriptResult } | { ok: false; error: string } {
-  if (typeof data !== "object" || data === null) {
-    return { ok: false, error: "返回数据不是对象" };
+  const content = typeof raw === "string" ? raw.trim() : "";
+  if (!content) {
+    return { ok: false, error: "AI 返回内容为空" };
   }
-
-  if (data.type !== "episode_script") {
-    return { ok: false, error: `type 字段必须为 "episode_script"，实际: ${data.type}` };
-  }
-
-  const ep = data.episode;
-  if (typeof ep !== "object" || ep === null) {
-    return { ok: false, error: "episode 字段必须是对象" };
-  }
-
-  if (!ep.index || typeof ep.index !== "number") {
-    return { ok: false, error: "episode.index 字段缺失或无效" };
-  }
-  if (!ep.title || typeof ep.title !== "string") {
-    return { ok: false, error: "episode.title 字段缺失或无效" };
-  }
-  if (!Array.isArray(ep.characters)) {
-    return { ok: false, error: "episode.characters 必须是数组" };
-  }
-  if (!Array.isArray(ep.shots)) {
-    return { ok: false, error: "episode.shots 必须是数组" };
-  }
-  if (typeof ep.cliffhanger !== "string") {
-    return { ok: false, error: "episode.cliffhanger 字段缺失或无效" };
-  }
-
-  // Validate shots structure
-  for (let i = 0; i < ep.shots.length; i++) {
-    const shot = ep.shots[i];
-    if (!shot.index || typeof shot.index !== "number") {
-      return { ok: false, error: `shots[${i}] 缺少有效的 index 字段` };
-    }
-    if (typeof shot.durationSec !== "number") {
-      return { ok: false, error: `shots[${i}] 缺少有效的 durationSec 字段` };
-    }
-    if (typeof shot.visual !== "string") {
-      return { ok: false, error: `shots[${i}] 缺少有效的 visual 字段` };
-    }
-  }
-
-  return { ok: true, value: data as ScriptWorkshopEpisodeScriptResult };
+  return { ok: true, value: { index, content } };
 }

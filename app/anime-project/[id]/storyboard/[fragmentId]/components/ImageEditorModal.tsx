@@ -156,7 +156,7 @@ export default function ImageEditorModal({
   const [activeTab, setActiveTab] = useState<TabValue>("ai");
 
   // 初始化
-  // 用 layout effect 避免弹窗打开后先渲染旧内容导致“闪一下”
+  // 用 layout effect 避免弹窗打开后先渲染旧内容导致"闪一下"
   useLayoutEffect(() => {
     if (open && imageUrl) {
       // 重置状态
@@ -187,7 +187,8 @@ export default function ImageEditorModal({
       }
 
       // 立即加载（内部已有 retry 逻辑）
-      loadImageToCanvas(getProxyUrl(imageUrl));
+      const proxyUrl = getProxyUrl(imageUrl);
+      loadImageToCanvas(proxyUrl);
       loadBackendHistory();
     }
   }, [open, imageUrl]);
@@ -201,7 +202,6 @@ export default function ImageEditorModal({
   }, [defaultModel, selectedModel]);
 
   const loadImageToCanvas = (url: string, retryCount = 0) => {
-    // 任何时候切换底图，都展示 loading，避免闪烁
     setIsImageLoading(true);
 
     const canvas = canvasRef.current;
@@ -210,7 +210,7 @@ export default function ImageEditorModal({
       if (retryCount < 10) setTimeout(() => loadImageToCanvas(url, retryCount + 1), 50);
       return;
     }
-    
+
     const context = canvas.getContext("2d", { willReadFrequently: true });
     const dContext = drawCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -222,10 +222,9 @@ export default function ImageEditorModal({
     setDrawCtx(dContext);
 
     const img = new Image();
-    img.crossOrigin = "anonymous"; // 必须设置，配合 proxy 使用
-    img.src = url; 
+    img.crossOrigin = "anonymous";
+    img.src = url;
     img.onload = () => {
-      // 保持原图分辨率（否则保存后会被永久降质）；显示缩放由 zoom/CSS transform 控制
       const width = img.naturalWidth || img.width;
       const height = img.naturalHeight || img.height;
 
@@ -233,44 +232,50 @@ export default function ImageEditorModal({
       canvas.height = height;
       drawCanvas.width = width;
       drawCanvas.height = height;
-      
+
       context.clearRect(0, 0, width, height);
       context.drawImage(img, 0, 0, width, height);
-      dContext.clearRect(0, 0, width, height); // 清空画板层
-      
+      dContext.clearRect(0, 0, width, height);
+
       const snapBg = canvas.toDataURL();
       const snapDraw = drawCanvas.toDataURL();
-      
+
       setUndoStack([{ bg: snapBg, draw: snapDraw }]);
       setRedoStack([]);
 
-      // 让图片不要铺满弹窗：自动适配一个较舒适的初始缩放
       try {
         const el = containerRef.current;
         if (el) {
           const rect = el.getBoundingClientRect();
-          const availableW = Math.max(100, rect.width - 80);
-          const availableH = Math.max(100, rect.height - 160);
-          const scale = Math.min(availableW / width, availableH / height, 1);
-          // 最大 95%，给 UI 留白
-          const nextZoom = Math.max(10, Math.min(95, Math.floor(scale * 100)));
+          const availableW = Math.max(100, rect.width - 48);
+          const availableH = Math.max(100, rect.height - 80);
+          const scale = Math.min(availableW / width, availableH / height);
+          const nextZoom = Math.max(10, Math.min(200, Math.floor(scale * 100)));
           setZoom(nextZoom);
         }
       } catch {
         // ignore
       }
 
-      // 延后一帧再显示，避免极端情况下出现“先显示后缩放”的闪烁
       requestAnimationFrame(() => setIsImageLoading(false));
     };
-    
+
     img.onerror = () => {
-      console.error("加载图片失败:", url);
-      setIsImageLoading(false);
-      // 如果 proxy 失败，尝试直接加载（可能同源）
-      if (url.includes("/api/proxy-image")) {
-         // console.log("尝试回退到原始 URL");
+      // proxy 加载失败时，回退到直接加载原始 URL
+      if (url.includes("/api/proxy-image") && retryCount === 0) {
+        try {
+          const originalUrl = new URL(url, window.location.href).searchParams.get("url");
+          if (originalUrl) {
+            loadImageToCanvas(originalUrl, retryCount + 1);
+            return;
+          }
+        } catch {
+          // URL 解析失败，继续走错误流程
+        }
       }
+
+      setIsImageLoading(false);
+      toast("图片加载失败，请检查图片 URL 是否有效", "error");
     };
   };
 
@@ -611,7 +616,7 @@ export default function ImageEditorModal({
     const newId = Date.now().toString();
     console.log("[TextTool] Creating text object at", { x, y, id: newId });
     
-    // 文字大小：以“屏幕上看起来的字号”为准。
+    // 文字大小：以"屏幕上看起来的字号"为准。
     // 因为整个画布会按 zoom 缩放；大图 fit 后 zoom 很小，直接用 32px 会肉眼几乎看不见。
     const safeZoom = Math.max(10, zoom);
     const fontSizeOnCanvas = Math.round((textSize * 100) / safeZoom);
@@ -943,7 +948,7 @@ export default function ImageEditorModal({
     // 如果用 canvas 坐标，大图缩小时 20px 对应的 canvas 像素很大，导致 handle 判定区域过小
     // 所以我们反过来，把 cropRect 映射到 client 坐标去判断
 
-    // 命中判断必须基于“显示出来”的画布的矩形。
+    // 命中判断必须基于"显示出来"的画布的矩形。
     // 两层画布尺寸相同、位置叠加，随便取一层即可。
     const canvas = drawCanvasRef.current || canvasRef.current;
     if (!canvas) return;
@@ -1437,7 +1442,7 @@ export default function ImageEditorModal({
                 </div>
                 <div className="h-4 w-px bg-zinc-700" />
                 <span className="text-[10px] text-zinc-500">
-                  点击画面添加文字，输入后点“确认”烘焦到图片
+                  点击画面添加文字，输入后点"确认"烘焦到图片
                 </span>
               </div>
             )}

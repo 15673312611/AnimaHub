@@ -62,6 +62,21 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ElementType; 
     icon: PenTool,
     color: "text-purple-400 bg-purple-500/10 border-purple-500/20",
   },
+  SCRIPT_WORKSHOP_OUTLINE: {
+    label: "剧本工坊-分集大纲",
+    icon: PenTool,
+    color: "text-purple-400 bg-purple-500/10 border-purple-500/20",
+  },
+  SCRIPT_WORKSHOP_EPISODE: {
+    label: "剧本工坊-分集脚本",
+    icon: PenTool,
+    color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+  },
+  SCRIPT_WORKSHOP_NOVEL_COMPRESS: {
+    label: "剧本工坊-小说改编",
+    icon: PenTool,
+    color: "text-pink-400 bg-pink-500/10 border-pink-500/20",
+  },
 };
 
 export default function AdminPage() {

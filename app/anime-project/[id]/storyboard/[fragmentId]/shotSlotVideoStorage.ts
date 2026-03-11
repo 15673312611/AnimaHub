@@ -37,8 +37,8 @@ export interface SlotImageRecord {
 export const AI_AGENT_SHOT_VIDEO_UPDATED_EVENT = "ai-agent-shot-video-updated";
 export const AI_AGENT_SHOT_IMAGE_UPDATED_EVENT = "ai-agent-shot-image-updated";
 
-// 视频生成 pending 超时时间（30分钟），超过此时间的 pending 会被自动清理
-export const PENDING_VIDEO_TIMEOUT_MS = 30 * 60 * 1000;
+// 视频生成 pending 超时时间（5小时），超过此时间的 pending 会被自动清理
+export const PENDING_VIDEO_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 
 /**
  * Build a pending slot queue for a batch that shares the same source image.
@@ -132,7 +132,7 @@ export function readPendingVideoSlots(shotId: number): PendingVideoSlot[] {
 /**
  * 读取 pending 队列并自动清理过期的记录
  * @param shotId 镜头ID
- * @param timeoutMs 超时时间（毫秒），默认 30 分钟
+ * @param timeoutMs 超时时间（毫秒），默认 5 小时
  * @returns 未过期的 pending 队列
  */
 export function readAndCleanExpiredPendingSlots(

@@ -66,7 +66,7 @@ export default function AiImagePage() {
   // 改为支持多个参考图
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
   const [history, setHistory] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   // 分页状态
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize] = useState(20);
@@ -119,8 +119,6 @@ export default function AiImagePage() {
   }, [messages]);
 
   useEffect(() => {
-    fetchHistory();
-    fetchProjects();
     fetchCoinInfo();
 
     const resolveCurrentUserId = (): number | null => {
@@ -167,6 +165,12 @@ export default function AiImagePage() {
       pollingRefs.current.clear();
     };
   }, []);
+
+  useEffect(() => {
+    if (historyOpen && history.length === 0 && !loadingHistory) {
+      fetchHistory(1);
+    }
+  }, [historyOpen]);
   
   // 处理 WebSocket 推送的图片状态更新
   const handleImageStatusUpdate = (message: any) => {
@@ -543,6 +547,9 @@ export default function AiImagePage() {
     setAssetName("");
     setAssetCategory("characters");
     setAddToAssetDialogOpen(true);
+    if (projects.length === 0) {
+      fetchProjects();
+    }
   };
 
   const handleAddToAsset = async () => {
@@ -612,23 +619,28 @@ export default function AiImagePage() {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-[#020204] text-white relative font-sans selection:bg-amber-500/30 overflow-hidden rounded-tl-2xl">
+    <div className="h-[calc(100vh-4rem)] w-full flex flex-col bg-gradient-to-br from-[#09070f] via-[#040308] to-[#020204] text-white relative font-sans selection:bg-violet-500/30 overflow-hidden rounded-tl-2xl">
       
       {/* 0. Ambient Background Effects */}
       <div className="absolute inset-0 z-0 pointer-events-none">
         {/* Top-right glow */}
-        <div className="absolute -top-[20%] -right-[10%] w-[70vw] h-[70vw] rounded-full bg-indigo-900/10 blur-[120px] mix-blend-screen animate-pulse duration-[10s]"></div>
+        <div className="absolute -top-[16%] -right-[8%] w-[56vw] h-[56vw] rounded-full bg-indigo-900/12 blur-[90px] mix-blend-screen"></div>
         {/* Bottom-left glow */}
-        <div className="absolute -bottom-[20%] -left-[10%] w-[60vw] h-[60vw] rounded-full bg-amber-900/5 blur-[100px] mix-blend-screen"></div>
-        {/* Noise overlay */}
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-15 brightness-100 contrast-150 mix-blend-overlay"></div>
+        <div className="absolute -bottom-[16%] -left-[8%] w-[50vw] h-[50vw] rounded-full bg-purple-900/10 blur-[80px] mix-blend-screen"></div>
+        {/* Subtle glow layer (replaces grain noise texture) */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(167,139,250,0.10),transparent_42%),radial-gradient(circle_at_85%_80%,rgba(99,102,241,0.08),transparent_45%)]"></div>
       </div>
 
       {/* 1. Header Area (Compact) */}
       <div className="flex-none px-6 py-4 flex justify-end z-20">
          <Button 
            variant="ghost" 
-           onClick={() => setHistoryOpen(true)}
+           onClick={() => {
+             setHistoryOpen(true);
+             if (history.length === 0 && !loadingHistory) {
+               fetchHistory(1);
+             }
+           }}
            className="relative bg-gradient-to-r from-purple-500/20 to-blue-500/20 border border-purple-500/30 hover:border-purple-500/50 hover:from-purple-500/30 hover:to-blue-500/30 backdrop-blur-xl text-white gap-2.5 h-10 px-5 rounded-full transition-all duration-300 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 hover:scale-105"
          >
            <div className="absolute inset-0 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 opacity-0 hover:opacity-10 transition-opacity" />
@@ -645,12 +657,12 @@ export default function AiImagePage() {
                   <div className="flex flex-col items-center justify-center gap-8 min-h-[60vh] animate-in fade-in slide-in-from-bottom-4 duration-700">
                      {/* Empty State Icon */}
                      <div className="relative group cursor-default scale-110">
-                        <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/20 to-purple-500/20 blur-[50px] rounded-full group-hover:blur-[60px] transition-all duration-500"></div>
+                        <div className="absolute inset-0 bg-gradient-to-tr from-violet-500/20 to-indigo-500/20 blur-[50px] rounded-full group-hover:blur-[60px] transition-all duration-500"></div>
                         <div className="relative w-32 h-32 rounded-[2rem] bg-gradient-to-b from-white/5 to-transparent border border-white/5 backdrop-blur-sm flex items-center justify-center transform rotate-3 group-hover:rotate-6 transition-transform duration-500">
                            <Palette className="w-12 h-12 text-white/20 group-hover:text-white/40 transition-colors" />
                         </div>
-                        <div className="absolute -top-3 -right-3 w-16 h-16 rounded-2xl bg-gradient-to-b from-amber-500/10 to-transparent border border-white/5 backdrop-blur-md flex items-center justify-center transform -rotate-6 group-hover:-rotate-12 transition-transform duration-500 delay-100">
-                           <Wand2 className="w-6 h-6 text-amber-500/50 group-hover:text-amber-500/80 transition-colors" />
+                        <div className="absolute -top-3 -right-3 w-16 h-16 rounded-2xl bg-gradient-to-b from-violet-500/10 to-transparent border border-white/5 backdrop-blur-md flex items-center justify-center transform -rotate-6 group-hover:-rotate-12 transition-transform duration-500 delay-100">
+                           <Wand2 className="w-6 h-6 text-violet-400/60 group-hover:text-violet-300 transition-colors" />
                         </div>
                      </div>
                      
@@ -668,7 +680,7 @@ export default function AiImagePage() {
                            <button 
                               key={i}
                               onClick={() => useSuggestion(text)}
-                              className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 hover:border-amber-500/30 text-[11px] text-gray-400 hover:text-white transition-all duration-300"
+                              className="px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 hover:border-violet-500/30 text-[11px] text-gray-400 hover:text-white transition-all duration-300"
                            >
                               {text}
                            </button>
@@ -679,7 +691,7 @@ export default function AiImagePage() {
                   messages.map((msg, msgIndex) => (
                      <div key={msg.id} className="w-full">
                         {/* 每条消息都是完整宽度的卡片 - 更紧凑的设计 */}
-                        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden shadow-lg">
+                        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden shadow-lg transition-all duration-300 hover:border-violet-500/25 hover:bg-white/[0.06] hover:shadow-violet-950/30">
                            {/* 消息头部 - 显示提示词和参数 */}
                            <div className="p-3 border-b border-white/5">
                               <div className="flex items-start gap-2">
@@ -728,9 +740,9 @@ export default function AiImagePage() {
                               {msg.status === 'pending' || msg.status === 'generating' ? (
                                  <div className="p-8 flex flex-col items-center gap-3">
                                     <div className="relative">
-                                       <div className="absolute inset-0 rounded-full blur-lg bg-gradient-to-r from-amber-500/30 to-purple-500/30 animate-pulse"></div>
-                                       <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-amber-500/20 to-purple-500/20 backdrop-blur-sm border border-white/10 flex items-center justify-center">
-                                          <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                                       <div className="absolute inset-0 rounded-full blur-lg bg-gradient-to-r from-violet-500/30 to-indigo-500/30 animate-pulse"></div>
+                                       <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-violet-500/20 to-indigo-500/20 backdrop-blur-sm border border-white/10 flex items-center justify-center">
+                                          <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
                                        </div>
                                     </div>
                                     <p className="text-xs text-gray-400">
@@ -789,7 +801,7 @@ export default function AiImagePage() {
                                  <Button 
                                     size="sm"
                                     onClick={() => openAddToAssetDialog({ id: msg.taskId || 0, imageUrl: msg.imageUrl, prompt: msg.prompt })}
-                                    className="flex-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-400 border border-amber-500/30 h-8 text-xs"
+                                    className="flex-1 bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 hover:from-violet-500/30 hover:to-fuchsia-500/30 text-violet-300 border border-violet-500/30 h-8 text-xs"
                                  >
                                     <FolderPlus className="w-3 h-3 mr-1.5" />
                                     入库归档
@@ -815,6 +827,7 @@ export default function AiImagePage() {
                   rounded-[24px] shadow-2xl shadow-black/50 
                   transition-all duration-300 ease-out
                   hover:border-white/20 hover:bg-[#121214]
+                  focus-within:border-violet-500/40 focus-within:bg-[#14121a] focus-within:shadow-violet-950/30
                   flex flex-col p-3 gap-3
                `}
             >
@@ -825,9 +838,9 @@ export default function AiImagePage() {
                   <div className="flex items-center gap-2.5">
                      {/* 当前模型价格 */}
                      {modelPrices[selectedModelInfo?.value || model] > 0 && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20">
-                           <Coins className="w-3.5 h-3.5 text-amber-400" />
-                           <span className="text-[11px] font-medium text-amber-400">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-violet-500/10 to-indigo-500/10 border border-violet-500/20">
+                           <Coins className="w-3.5 h-3.5 text-violet-400" />
+                           <span className="text-[11px] font-medium text-violet-400">
                               本次 -{modelPrices[selectedModelInfo?.value || model]}
                            </span>
                         </div>
@@ -836,7 +849,7 @@ export default function AiImagePage() {
                      <DropdownMenu open={modelDropdownOpen} onOpenChange={setModelDropdownOpen}>
                         <DropdownMenuTrigger asChild>
                            <button className="flex items-center gap-2 text-[11px] font-medium text-gray-400 hover:text-white transition-colors bg-white/5 hover:bg-white/10 px-3 py-2 rounded-xl border border-white/5 outline-none">
-                              <Box className="w-3.5 h-3.5 text-amber-500" />
+                              <Box className="w-3.5 h-3.5 text-violet-400" />
                               <span className="truncate max-w-[120px]">{models.find(m => m.value === model)?.label?.split('(')[0] || '选择模型'}</span>
                            </button>
                         </DropdownMenuTrigger>
@@ -860,7 +873,7 @@ export default function AiImagePage() {
                                     }}
                                     className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
                                        model === m.value 
-                                       ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' 
+                                       ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' 
                                        : 'text-gray-300 hover:bg-white/5 hover:text-white border border-transparent'
                                     }`}
                                  >
@@ -868,7 +881,7 @@ export default function AiImagePage() {
                                        <div className="flex items-center justify-between">
                                           <span className="text-xs font-medium">{m.label}</span>
                                           {modelPrices[m.value] > 0 && (
-                                             <span className="text-[10px] text-amber-400 flex items-center gap-0.5">
+                                             <span className="text-[10px] text-violet-300 flex items-center gap-0.5">
                                                 <Coins className="w-3 h-3" />{modelPrices[m.value]}
                                              </span>
                                           )}
@@ -897,7 +910,7 @@ export default function AiImagePage() {
                                     onClick={() => setRatio(r.value)}
                                     className={`flex flex-col items-center p-2 rounded-md border transition-all ${
                                        ratio === r.value 
-                                       ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' 
+                                       ? 'bg-violet-500/20 border-violet-500/50 text-violet-300' 
                                        : 'bg-white/5 border-transparent text-gray-400 hover:bg-white/10 hover:text-white'
                                     }`}
                                  >
@@ -922,10 +935,10 @@ export default function AiImagePage() {
                        <div className="relative group">
                          <button 
                            onClick={() => fileInputRef.current?.click()}
-                           className="w-12 h-12 rounded-xl border border-dashed border-white/20 hover:border-amber-500/50 bg-white/5 hover:bg-white/10 flex flex-col items-center justify-center gap-0.5 transition-all group-hover:scale-105"
+                           className="w-12 h-12 rounded-xl border border-dashed border-white/20 hover:border-violet-500/50 bg-white/5 hover:bg-white/10 flex flex-col items-center justify-center gap-0.5 transition-all group-hover:scale-105"
                          >
-                           <Plus className="w-4 h-4 text-gray-400 group-hover:text-amber-500" />
-                           <span className="text-[9px] text-gray-500 group-hover:text-amber-500/80 font-medium">添加</span>
+                           <Plus className="w-4 h-4 text-gray-400 group-hover:text-violet-300" />
+                           <span className="text-[9px] text-gray-500 group-hover:text-violet-300 font-medium">添加</span>
                          </button>
                          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
                        </div>
@@ -956,7 +969,7 @@ export default function AiImagePage() {
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
                         placeholder="描述您的想象..."
-                        className="w-full bg-transparent border-0 focus-visible:ring-0 text-white placeholder:text-gray-500/50 min-h-[40px] max-h-[120px] p-2 text-base resize-none leading-relaxed selection:bg-amber-500/30"
+                        className="w-full bg-transparent border-0 focus-visible:ring-0 text-white placeholder:text-gray-500/50 min-h-[40px] max-h-[120px] p-2 text-base resize-none leading-relaxed selection:bg-violet-500/30"
                         rows={1}
                         onInput={(e) => {
                            const target = e.target as HTMLTextAreaElement;
@@ -981,7 +994,7 @@ export default function AiImagePage() {
                         w-12 h-12 rounded-[18px] flex-shrink-0 transition-all duration-500
                         ${(!prompt.trim() && referenceImages.length === 0)
                            ? "bg-white/5 text-gray-600"
-                           : "bg-gradient-to-tr from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white shadow-lg shadow-orange-500/30 hover:scale-105 hover:rotate-3"
+                           : "bg-gradient-to-tr from-violet-500 to-fuchsia-600 hover:from-violet-400 hover:to-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30 hover:scale-105 hover:rotate-3"
                         }
                      `}
                    >
@@ -1017,32 +1030,32 @@ export default function AiImagePage() {
                   )}
                   {loadingHistory && history.length === 0 && (
                      <div className="col-span-full h-64 flex flex-col items-center justify-center text-gray-600 gap-4">
-                        <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
+                        <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
                         <p>加载中...</p>
                      </div>
                   )}
                   {history.map((item, index) => (
                      <div 
                        key={item.id} 
-                       className={`group relative aspect-square bg-[#0a0a0a] rounded-2xl overflow-hidden border shadow-lg transition-[border-color,box-shadow] duration-200 ${
+                       className={`group relative aspect-square bg-[#0a0a0a] rounded-2xl overflow-hidden border shadow-lg transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 ${
                          item.status === 'FAILED' 
                            ? 'border-red-500/30 hover:border-red-500/50' 
                            : item.status === 'PENDING' || item.status === 'GENERATING'
-                             ? 'border-amber-500/30 hover:border-amber-500/50'
-                             : 'border-white/5 hover:border-amber-500/50 cursor-pointer hover:shadow-amber-500/10'
+                             ? 'border-violet-500/30 hover:border-violet-500/50'
+                             : 'border-white/5 hover:border-violet-500/50 cursor-pointer hover:shadow-violet-500/10'
                        }`}
                        onClick={() => item.status === 'COMPLETED' && loadHistoryItem(item)}
                      >
                         {/* 根据状态显示不同内容 */}
                         {item.status === 'PENDING' || item.status === 'GENERATING' ? (
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-amber-500/5 to-transparent">
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-gradient-to-b from-violet-500/10 to-transparent">
                             <div className="relative">
-                              <div className="absolute inset-0 rounded-full blur-lg bg-amber-500/20 animate-pulse"></div>
-                              <div className="relative w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-                                <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+                              <div className="absolute inset-0 rounded-full blur-lg bg-violet-500/20 animate-pulse"></div>
+                              <div className="relative w-12 h-12 rounded-full bg-violet-500/10 border border-violet-500/30 flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
                               </div>
                             </div>
-                            <span className="text-xs text-amber-400 font-medium">
+                            <span className="text-xs text-violet-300 font-medium">
                               {item.status === 'PENDING' ? '准备中...' : '生成中...'}
                             </span>
                             <p className="text-[10px] text-gray-500 px-4 text-center line-clamp-2">
@@ -1082,7 +1095,7 @@ export default function AiImagePage() {
                             </button>
                             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col justify-end p-4">
                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                  <span className="text-[10px] font-bold text-violet-300 bg-violet-500/10 px-2 py-0.5 rounded-full border border-violet-500/20">
                                      {item.ratio?.replace(' --ar ', '') || '1:1'}
                                   </span>
                                </div>
@@ -1181,7 +1194,7 @@ export default function AiImagePage() {
                    value={assetName} 
                    onChange={e => setAssetName(e.target.value)}
                    placeholder="为这个杰作取个名字..."
-                   className="bg-black/40 border-white/10 h-10 focus:border-amber-500/50 transition-colors"
+                   className="bg-black/40 border-white/10 h-10 focus:border-violet-500/50 transition-colors"
                  />
                </div>
                
@@ -1232,7 +1245,7 @@ export default function AiImagePage() {
              <Button 
                onClick={handleAddToAsset} 
                disabled={addingToAsset}
-               className="bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-900/20"
+               className="bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-900/20"
              >
                {addingToAsset && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                确认归档

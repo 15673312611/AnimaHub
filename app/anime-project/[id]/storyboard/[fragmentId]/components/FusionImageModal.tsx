@@ -291,12 +291,12 @@ export default function FusionImageModal({
                                     {modelsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent className="bg-zinc-900/95 backdrop-blur-xl border-zinc-700/50 shadow-xl shadow-black/20 w-[--radix-dropdown-menu-trigger-width]">
+                            <DropdownMenuContent className="bg-zinc-900 border-zinc-700/50 shadow-xl shadow-black/40 w-[--radix-dropdown-menu-trigger-width]">
                                 {models.map(m => (
-                                    <DropdownMenuItem 
-                                        key={m.value} 
+                                    <DropdownMenuItem
+                                        key={m.value}
                                         onClick={() => setModel(m.value)}
-                                        className={cn("py-3", model === m.value && "bg-emerald-500/10")}
+                                        className={cn("py-3 text-zinc-200 focus:bg-zinc-800 focus:text-white cursor-pointer", model === m.value && "bg-emerald-500/10 text-emerald-300")}
                                     >
                                         <span>{m.label}</span>
                                     </DropdownMenuItem>

@@ -2,6 +2,8 @@ import type {
   ScriptWorkshopEpisodeScript,
   ScriptWorkshopEpisodeOutline,
   ScriptWorkshopSettings,
+  NovelChapter,
+  NovelAdaptationGroup,
 } from "./types";
 
 export interface DraftShot {
@@ -22,6 +24,9 @@ export interface ScriptWorkshopProjectRecord {
   settings: ScriptWorkshopSettings;
   createdAt: string;
   updatedAt: string;
+
+  /** 项目模式：normal=普通灵感创作，novel=小说改编 */
+  mode?: "normal" | "novel";
 
   outlines?: ScriptWorkshopEpisodeOutline[];
   episodeScripts?: Record<number, ScriptWorkshopEpisodeScript>; // key = episode index
@@ -88,6 +93,11 @@ export interface ScriptWorkshopProjectRecord {
       error?: string;
     }
   >;
+
+  // ===== 小说改编 =====
+  novelChapters?: NovelChapter[];                    // 识别出的章节列表
+  novelAdaptationGroups?: NovelAdaptationGroup[];    // 章节分组（每组对应一集）
+  novelCompressTemplate?: { type: "system" | "user"; id: string }; // 压缩用提示词模板
 }
 
 const STORAGE_KEY = "script_workshop_projects_v1";
