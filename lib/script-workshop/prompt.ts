@@ -67,9 +67,7 @@ function buildEpisodeOutlineContextBlock(outline: ScriptWorkshopEpisodeOutline, 
     "## 本集大纲",
     `- 集数：${outline.index}`,
     `- 标题：${outline.title}`,
-    `- 开头钩子：${outline.hook}`,
     `- 剧情摘要：${outline.summary}`,
-    `- 结尾悬念：${outline.cliffhanger}`,
     `- 建议镜头数：${shotsPerEpisode}`,
   ].join("\n");
 }
@@ -134,7 +132,7 @@ export function renderEpisodeScriptPromptFromTemplate(params: {
 }): string {
   const { template, sourceText, settings, outline } = params;
 
-  const shotsPerEpisode = outline.estimatedShots || estimateShotsPerEpisode(settings);
+  const shotsPerEpisode = estimateShotsPerEpisode(settings);
   const visualStyleLabel = settings.visualStyle === "anime" ? "动漫短剧" : "真人短剧";
   const platformLabel = settings.platformPreset === "short_video" ? "短视频" : "YouTube";
   const narrativeModeLabel = getNarrativeModeLabel(settings.narrativeMode);
@@ -142,9 +140,9 @@ export function renderEpisodeScriptPromptFromTemplate(params: {
   const rendered = renderTemplate(template, {
     episodeIndex: outline.index,
     episodeTitle: outline.title,
-    episodeHook: outline.hook,
+    episodeHook: "",
     episodeSummary: outline.summary,
-    episodeCliffhanger: outline.cliffhanger,
+    episodeCliffhanger: "",
 
     visualStyleLabel,
     narrativeMode: settings.narrativeMode,

@@ -1,7 +1,6 @@
 import type {
   ScriptWorkshopOutlineResult,
   ScriptWorkshopEpisodeScriptResult,
-  ScriptWorkshopEpisodeOutline,
 } from "./types";
 
 export function extractFirstJsonObject(text: string): string | null {
@@ -136,20 +135,18 @@ export function validateOutlineResult(
 
   for (let i = 0; i < data.episodes.length; i++) {
     const ep = data.episodes[i];
-    if (!ep.index || typeof ep.index !== "number") {
-      return { ok: false, error: `episodes[${i}] 缺少有效的 index 字段` };
+    if (typeof ep !== "object" || ep === null) {
+      return { ok: false, error: `episodes[${i}] 不是对象` };
     }
-    if (!ep.title || typeof ep.title !== "string") {
-      return { ok: false, error: `episodes[${i}] 缺少有效的 title 字段` };
+
+    const title = ep.title ?? ep.chapterName ?? ep.name ?? ep["章节名称"] ?? ep["章节名"] ?? ep["章节标题"];
+    if (!title || typeof title !== "string") {
+      return { ok: false, error: `episodes[${i}] 缺少有效的 title` };
     }
-    if (typeof ep.hook !== "string") {
-      return { ok: false, error: `episodes[${i}] 缺少有效的 hook 字段` };
-    }
-    if (typeof ep.summary !== "string") {
-      return { ok: false, error: `episodes[${i}] 缺少有效的 summary 字段` };
-    }
-    if (typeof ep.cliffhanger !== "string") {
-      return { ok: false, error: `episodes[${i}] 缺少有效的 cliffhanger 字段` };
+
+    const summary = ep.summary ?? ep.plot ?? ep.story ?? ep.content ?? ep["剧情"] ?? ep["剧情摘要"];
+    if (typeof summary !== "string") {
+      return { ok: false, error: `episodes[${i}] 缺少有效的 summary` };
     }
   }
 

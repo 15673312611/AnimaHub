@@ -22,10 +22,7 @@ export interface ScriptWorkshopSettings {
 export interface ScriptWorkshopEpisodeOutline {
   index: number; // 1-based
   title: string;
-  hook: string;
   summary: string;
-  cliffhanger: string;
-  estimatedShots: number;
 }
 
 export interface ScriptWorkshopEpisodeScript {
@@ -35,8 +32,8 @@ export interface ScriptWorkshopEpisodeScript {
 
 export interface ScriptWorkshopOutlineResult {
   type: "outline";
-  settings: ScriptWorkshopSettings;
-  episodes: ScriptWorkshopEpisodeOutline[];
+  settings?: ScriptWorkshopSettings;
+  episodes: any[];
 }
 
 export interface ScriptWorkshopEpisodeScriptResult {

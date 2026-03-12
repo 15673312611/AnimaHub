@@ -131,6 +131,20 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     return Object.values(map).sort((a, b) => a.index - b.index);
   }, [swProject]);
 
+  const outlineTitleByIndex = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const o of swProject?.outlines || []) {
+      if (typeof o?.index !== "number") continue;
+      const title = String(o.title || "").trim();
+      if (title) m.set(o.index, title);
+    }
+    return m;
+  }, [swProject?.outlines]);
+
+  const getEpisodeTitle = (index: number) => {
+    return outlineTitleByIndex.get(index) || `第${index}集`;
+  };
+
   // ===== Storyboard template selection =====
   const [storyboardTab, setStoryboardTab] = useState<"system" | "user">("system");
   const [storyboardSystemTemplates, setStoryboardSystemTemplates] = useState<StoryboardTemplate[]>([]);
@@ -384,7 +398,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     updateEpisodeJob(ep.index, { status: "CREATING_FRAGMENT", message: "正在生成分镜..." });
 
     // 获取剧本内容
-    const scriptContent = formatEpisodeToText(ep, current.settings);
+    const scriptContent = formatEpisodeToText(ep);
 
     // 调用后端 API，后端已经处理好 JSON 解析和字段标准化
     const sbRes = await api.post("/script-workshop/generate-storyboard", {
@@ -540,9 +554,9 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     try {
       const episodesToImport = validTargets.map((ep) => ({
         index: ep.index,
-        title: ep.title || `第${ep.index}集`,
+        title: getEpisodeTitle(ep.index),
         // 把原始分集脚本内容写入 workflow.scriptContent，避免导入后在分镜页提取角色/场景时报“没有剧本”。
-        scriptContent: formatEpisodeToText(ep, swProject.settings),
+        scriptContent: formatEpisodeToText(ep),
         shots: (swProject.episodeDrafts![ep.index].shots || []).map((s: any, idx: number) => ({
           index: s.index ?? idx + 1,
           action: s.action || s.description || "",
@@ -1114,8 +1128,11 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
                            </div>
                         </div>
 
-                        <h3 className="text-base font-bold text-white line-clamp-1 group-hover:text-purple-200 transition-colors" title={ep.title}>
-                          {ep.title}
+                        <h3
+                          className="text-base font-bold text-white line-clamp-1 group-hover:text-purple-200 transition-colors"
+                          title={getEpisodeTitle(ep.index)}
+                        >
+                          {getEpisodeTitle(ep.index)}
                         </h3>
                         
                         {/* 进度条装饰（仅生成中显示） */}

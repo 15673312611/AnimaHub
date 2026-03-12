@@ -34,34 +34,70 @@ function downloadText(filename: string, content: string, mime = "text/plain") {
   URL.revokeObjectURL(url);
 }
 
-function estimateShotsPerEpisode(settings: ScriptWorkshopSettings): number {
-  const avg = typeof settings?.avgShotSec === "number" && settings.avgShotSec > 0 ? settings.avgShotSec : 3.5;
-  const dur =
-    typeof settings?.episodeDurationSec === "number" && settings.episodeDurationSec > 0 ? settings.episodeDurationSec : 90;
-  const shots = Math.round(dur / avg);
-  return Math.max(8, Math.min(60, shots));
+function formatCharCount(n: number): string {
+  const v = Math.max(0, Math.floor(Number(n) || 0));
+  if (v >= 10000) return `${(v / 10000).toFixed(1)}万字`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k字`;
+  return `${v}字`;
 }
 
-function normalizeEpisodeOutlineForRequest(
-  outline: ScriptWorkshopEpisodeOutline,
-  settings: ScriptWorkshopSettings
-): ScriptWorkshopEpisodeOutline {
-  const o: any = outline as any;
+function buildOutlineBatchPlan(totalEpisodes: number): number[] {
+  const total = Math.max(0, Math.floor(Number(totalEpisodes) || 0));
+  if (total <= 0) return [];
 
-  const rawEstimated = o?.estimatedShots ?? o?.estimated_shots ?? o?.estimatedShot ?? o?.["estimatedSh-ots"];
-  const estimatedShots =
-    typeof rawEstimated === "number" && Number.isFinite(rawEstimated) && rawEstimated > 0
-      ? rawEstimated
-      : estimateShotsPerEpisode(settings);
+  // 15 集以内：一次性生成
+  if (total <= 15) return [total];
 
+  // 16-20：优先 10 + 剩余，避免出现 15 + 1 这种“第二次太短”的情况
+  if (total <= 20) return [10, total - 10];
+
+  // 21-30：两次生成，尽量均分（每次 10-15 集）
+  if (total <= 30) {
+    const first = Math.ceil(total / 2);
+    return [first, total - first];
+  }
+
+  // 30+：每次最多 15 集，尽量均分，保证不会出现“第二次只剩 1-2 集”
+  const batches = Math.ceil(total / 15);
+  const base = Math.floor(total / batches);
+  const rem = total % batches;
+  return Array.from({ length: batches }, (_, i) => base + (i < rem ? 1 : 0));
+}
+
+function normalizeEpisodeOutlineForRequest(outline: ScriptWorkshopEpisodeOutline) {
   return {
-    index: typeof o?.index === "number" ? o.index : Number(o?.index || 0),
-    title: typeof o?.title === "string" ? o.title : String(o?.title || ""),
-    hook: typeof o?.hook === "string" ? o.hook : String(o?.hook || ""),
-    summary: typeof o?.summary === "string" ? o.summary : String(o?.summary || ""),
-    cliffhanger: typeof o?.cliffhanger === "string" ? o.cliffhanger : String(o?.cliffhanger || ""),
-    estimatedShots,
+    index: outline.index,
+    title: outline.title,
+    summary: outline.summary,
   };
+}
+
+function normalizeOutlineEpisodesFromReply(params: {
+  episodes: any[];
+  startIndex: number; // 1-based
+}): ScriptWorkshopEpisodeOutline[] {
+  const eps = Array.isArray(params.episodes) ? params.episodes : [];
+  const start = Math.max(1, Math.floor(Number(params.startIndex) || 1));
+
+  const coerceString = (v: any) => (typeof v === "string" ? v : v == null ? "" : String(v));
+  const isPlainObject = (v: any) => typeof v === "object" && v !== null && !Array.isArray(v);
+
+  return eps.map((raw, i) => {
+    const index = start + i;
+
+    if (typeof raw === "string") {
+      return { index, title: `第${index}集`, summary: raw.trim() };
+    }
+
+    const o: any = isPlainObject(raw) ? raw : {};
+    const titleRaw = o.title ?? o.chapterName ?? o.name ?? o["章节名称"] ?? o["章节名"] ?? o["章节标题"];
+    const summaryRaw = o.summary ?? o.plot ?? o.story ?? o.content ?? o["剧情"];
+
+    const title = coerceString(titleRaw).trim() || `第${index}集`;
+    const summary = coerceString(summaryRaw).trim();
+
+    return { index, title, summary };
+  });
 }
 
 interface UserInferenceTemplate {
@@ -102,7 +138,7 @@ export default function ScriptWorkshopPage() {
   const [settings, setSettings] = useState<ScriptWorkshopSettings>({
     visualStyle: "anime",
     narrativeMode: "mixed",
-    tone: "悬疑+反转",
+    tone: "无",
     episodesCount: 10,
     episodeDurationSec: 90,
     avgShotSec: 3.5,
@@ -554,43 +590,85 @@ export default function ScriptWorkshopPage() {
 
     setLoadingOutline(true);
     try {
-      const result = await retryWithValidation(
-        async () => {
-          const res = await api.post("/script-workshop/generate-outline", {
-            template: outlineSel,
-            sourceText,
-            settings,
-          });
+      const totalEpisodes = Math.max(1, Math.floor(Number(settings.episodesCount) || 0));
+      const batchPlan = buildOutlineBatchPlan(totalEpisodes);
+      if (batchPlan.length === 0) {
+        throw new Error("集数配置不正确");
+      }
 
-          const reply: string = res.data?.reply || "";
-          const jsonText = extractFirstJsonObject(reply) || reply;
-          const parsed = safeJsonParse<ScriptWorkshopOutlineResult>(jsonText);
+      const allEpisodes: ScriptWorkshopEpisodeOutline[] = [];
+      let startIndex = 1;
 
-          if (!parsed.ok) {
-            throw new Error(`AI 输出不是有效 JSON：${parsed.error}`);
-          }
+      for (let batchIdx = 0; batchIdx < batchPlan.length; batchIdx++) {
+        const batchCount = batchPlan[batchIdx];
+        const endIndex = startIndex + batchCount - 1;
 
-          return parsed.value;
-        },
-        validateOutlineResult,
-        {
-          maxAttempts: 2,
-          onAttempt: (attempt, error) => {
-            console.warn(`生成大纲第 ${attempt} 次尝试失败:`, error);
-            if (attempt === 1) {
-              toast(`AI输出格式不正确，正在重试...`, "info");
+        toast(`正在生成分集大纲：第${startIndex}-${endIndex}集...`, "info");
+
+        const result = await retryWithValidation(
+          async () => {
+            const contextEpisodes = allEpisodes.slice(Math.max(0, allEpisodes.length - 10));
+
+            const res = await api.post("/script-workshop/generate-outline", {
+              template: outlineSel,
+              sourceText,
+              settings,
+              totalEpisodesCount: totalEpisodes,
+              startEpisodeIndex: startIndex,
+              batchEpisodesCount: batchCount,
+              previousEpisodes: contextEpisodes.length ? contextEpisodes.map(normalizeEpisodeOutlineForRequest) : undefined,
+            });
+
+            const reply: string = res.data?.reply || "";
+            const jsonText = extractFirstJsonObject(reply) || reply;
+            const parsed = safeJsonParse<ScriptWorkshopOutlineResult>(jsonText);
+
+            if (!parsed.ok) {
+              throw new Error(`AI 输出不是有效 JSON：${parsed.error}`);
             }
+
+            const validation = validateOutlineResult(parsed.value);
+            if (!validation.ok) {
+              throw new Error(validation.error);
+            }
+
+            const rawEpisodes = Array.isArray(parsed.value.episodes) ? parsed.value.episodes : [];
+            if (rawEpisodes.length < batchCount) {
+              throw new Error(`episodes 数量不足：期望 ${batchCount}，实际 ${rawEpisodes.length}`);
+            }
+
+            return { ...parsed.value, episodes: rawEpisodes.slice(0, batchCount) };
           },
+          (val) => validateOutlineResult(val),
+          {
+            maxAttempts: 2,
+            onAttempt: (attempt, error) => {
+              console.warn(`生成大纲第 ${attempt} 次尝试失败:`, error);
+              if (attempt === 1) {
+                toast(`AI输出格式不正确，正在重试...`, "info");
+              }
+            },
+          }
+        );
+
+        const normalizedBatch = normalizeOutlineEpisodesFromReply({
+          episodes: result.episodes || [],
+          startIndex,
+        });
+
+        if (normalizedBatch.length !== batchCount) {
+          throw new Error(`episodes 数量不匹配：期望 ${batchCount}，实际 ${normalizedBatch.length}`);
         }
-      );
 
-      const normalizedEpisodes = (result.episodes || []).map((ep) => normalizeEpisodeOutlineForRequest(ep as any, settings));
+        allEpisodes.push(...normalizedBatch);
+        startIndex += batchCount;
+      }
 
-      setOutlines(normalizedEpisodes);
+      setOutlines(allEpisodes);
       setEpisodeScripts({});
       setView("episodes");
-      setSelectedEpisodeIndex(normalizedEpisodes?.[0]?.index ?? null);
-      void persistCurrent({ outlines: normalizedEpisodes, episodeScripts: {} });
+      setSelectedEpisodeIndex(allEpisodes?.[0]?.index ?? null);
+      void persistCurrent({ outlines: allEpisodes, episodeScripts: {} });
       toast("分集大纲已生成", "success");
     } catch (err: any) {
       console.error(err);
@@ -601,9 +679,9 @@ export default function ScriptWorkshopPage() {
   };
 
   const handleGenerateEpisodeScript = async (outline: ScriptWorkshopEpisodeOutline) => {
-    // 小说改编模式：使用 outline.summary（改编后的内容）作为 sourceText
-    // 普通模式：使用 sourceText（用户输入的构思）
-    const effectiveSourceText = projectMode === "novel" ? outline.summary : sourceText;
+    // 为了让输出更“短平快”，分集脚本优先使用本集 summary 作为输入（而不是整篇构思/小说）。
+    // summary 为空时再回退到原始 sourceText。
+    const effectiveSourceText = (outline.summary || "").trim() || sourceText;
 
     if (!effectiveSourceText.trim()) {
       toast(projectMode === "novel" ? "该集改编内容为空" : "请先输入构思/小说内容", "error");
@@ -622,7 +700,7 @@ export default function ScriptWorkshopPage() {
         template: episodeSel,
         sourceText: effectiveSourceText,
         settings,
-        outline: normalizeEpisodeOutlineForRequest(outline as any, settings),
+        outline: normalizeEpisodeOutlineForRequest(outline),
       });
 
       const reply: string = res.data?.reply || "";
@@ -697,8 +775,8 @@ export default function ScriptWorkshopPage() {
         throw new Error("已取消");
       }
 
-      // 小说改编模式：使用 outline.summary 作为 sourceText
-      const effectiveSourceText = projectMode === "novel" ? outline.summary : sourceText;
+      // 优先使用本集 summary 作为输入，避免“像长篇小说一样”越写越长。
+      const effectiveSourceText = (outline.summary || "").trim() || sourceText;
 
       const result = await retryWithValidation(
         async () => {
@@ -710,7 +788,7 @@ export default function ScriptWorkshopPage() {
             template: episodeSel,
             sourceText: effectiveSourceText,
             settings,
-            outline: normalizeEpisodeOutlineForRequest(outline as any, settings),
+            outline: normalizeEpisodeOutlineForRequest(outline),
           });
 
           const reply: string = res.data?.reply || "";
@@ -773,16 +851,21 @@ export default function ScriptWorkshopPage() {
     toast("正在取消批量生成...", "info");
   };
 
+  const buildNovelGroupCombinedText = (group: NovelAdaptationGroup) => {
+    // 拼接该集的章节内容，超过3万字截断（保持与后端/提示词处理一致）
+    const MAX_CHARS = 30000;
+    const chaps = novelChapters.filter((c) => group.chapterIndexes.includes(c.index));
+    let combined = chaps.map((c) => `【${c.title}】\n${c.content}`).join("\n\n");
+    if (combined.length > MAX_CHARS) combined = combined.slice(0, MAX_CHARS) + "\n\n[内容已截断，超过3万字上限]";
+    return combined;
+  };
+
   // 改编单集小说内容
   const handleNovelCompressOne = async (groupIndex: number) => {
     const group = novelGroups[groupIndex];
     if (!group) return;
 
-    // 拼接该集的章节内容，超过3万字截断
-    const MAX_CHARS = 30000;
-    const chaps = novelChapters.filter((c) => group.chapterIndexes.includes(c.index));
-    let combined = chaps.map((c) => `【${c.title}】\n${c.content}`).join("\n\n");
-    if (combined.length > MAX_CHARS) combined = combined.slice(0, MAX_CHARS) + "\n\n[内容已截断，超过3万字上限]";
+    const combined = buildNovelGroupCombinedText(group);
 
     const prevGroup = novelGroups[groupIndex - 1];
     const prevEpisodeTail = prevGroup?.compressedContent
@@ -814,6 +897,29 @@ export default function ScriptWorkshopPage() {
       setNovelGroups((prev) => prev.map((g, i) => i === groupIndex ? { ...g, compressStatus: "failed" as const, compressError: msg } : g));
       toast(`第${group.episodeIndex}集改编失败: ${msg}`, "error");
     }
+  };
+
+  // 按原文：不调用改编接口，直接将原文拼接内容作为“改编结果”，便于继续走分集脚本流程
+  const handleNovelUseOriginalOne = (groupIndex: number) => {
+    const group = novelGroups[groupIndex];
+    if (!group) return;
+
+    const combined = buildNovelGroupCombinedText(group);
+    if (!combined.trim()) {
+      toast(`第${group.episodeIndex}集原文内容为空`, "error");
+      return;
+    }
+
+    setNovelGroups((prev) => {
+      const updated = prev.map((g, i) =>
+        i === groupIndex
+          ? { ...g, compressStatus: "done" as const, compressError: undefined, compressedContent: combined }
+          : g
+      );
+      void persistCurrent({ novelAdaptationGroups: updated });
+      return updated;
+    });
+    toast(`第${group.episodeIndex}集已按原文设置为已改编`, "success");
   };
 
   // 批量改编所有集（并发）
@@ -853,10 +959,7 @@ export default function ScriptWorkshopPage() {
     const newOutlines: ScriptWorkshopEpisodeOutline[] = doneGroups.map((g) => ({
       index: g.episodeIndex,
       title: `第${g.episodeIndex}集`,
-      hook: "",
       summary: g.compressedContent || "",
-      cliffhanger: "",
-      estimatedShots: estimateShotsPerEpisode(settings),
     }));
 
     setOutlines(newOutlines);
@@ -1056,46 +1159,133 @@ export default function ScriptWorkshopPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {projectMode === "normal" ? (
+                    <div>
+                      <label className="text-[10px] text-zinc-500 block mb-1.5">集数</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={settings.episodesCount}
+                        onChange={(e) =>
+                          setSettings((s) => ({ ...s, episodesCount: Math.max(1, Number(e.target.value) || 1) }))
+                        }
+                        className="h-9 text-xs bg-black/50 border-white/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                  ) : null}
                   <div>
-                    <label className="text-[10px] text-zinc-500 block mb-1.5">集数</label>
+                    <label className="text-[10px] text-zinc-500 block mb-1.5">单集时长</label>
                     <Input
                       type="number"
                       min={1}
-                      max={100}
-                      value={settings.episodesCount}
+                      max={3600}
+                      value={settings.episodeDurationSec}
                       onChange={(e) =>
-                        setSettings((s) => ({ ...s, episodesCount: Math.max(1, Number(e.target.value) || 1) }))
+                        setSettings((s) => ({
+                          ...s,
+                          episodeDurationSec: Math.max(1, Math.min(3600, Number(e.target.value) || 1)),
+                        }))
                       }
                       className="h-9 text-xs bg-black/50 border-white/10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-zinc-500 block mb-1.5">单集时长</label>
-                    <Select
-                      value={String(settings.episodeDurationSec)}
-                      onValueChange={(v) => setSettings((s) => ({ ...s, episodeDurationSec: Number(v) }))}
-                    >
-                      <SelectTrigger className="h-9 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="60">60s</SelectItem>
-                        <SelectItem value="90">90s</SelectItem>
-                        <SelectItem value="120">120s</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                        onClick={() => setSettings((s) => ({ ...s, episodeDurationSec: 60 }))}
+                      >
+                        60s
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                        onClick={() => setSettings((s) => ({ ...s, episodeDurationSec: 90 }))}
+                      >
+                        90s
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                        onClick={() => setSettings((s) => ({ ...s, episodeDurationSec: 120 }))}
+                      >
+                        120s
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="text-[10px] text-zinc-500 block mb-1.5">语言风格 (Tone)</label>
+                <label className="text-[10px] text-zinc-500 block mb-1.5">语言风格/题材（可选）</label>
                 <Input
                   value={settings.tone}
                   onChange={(e) => setSettings((s) => ({ ...s, tone: e.target.value }))}
                   className="h-9 text-xs bg-black/50 border-white/10"
-                  placeholder="例如：悬疑+反转 / 甜宠 / 搞笑"
+                  placeholder="例如：无 / 悬疑+反转 / 甜宠 / 搞笑"
                 />
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "无" }))}
+                  >
+                    无
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "悬疑+反转" }))}
+                  >
+                    悬疑+反转
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "甜宠" }))}
+                  >
+                    甜宠
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "搞笑" }))}
+                  >
+                    搞笑
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "热血" }))}
+                  >
+                    热血
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-[10px]"
+                    onClick={() => setSettings((s) => ({ ...s, tone: "爽文" }))}
+                  >
+                    爽文
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -1566,26 +1756,44 @@ export default function ScriptWorkshopPage() {
                           <span className={`text-[10px] text-zinc-500 ${group.totalChars > 30000 ? "text-amber-400" : ""}`}>
                             {(group.totalChars / 10000).toFixed(1)}万字{group.totalChars > 30000 ? " ⚠" : ""}
                           </span>
+                          {isDone && group.compressedContent ? (
+                            <span className="text-[10px] text-zinc-500">
+                              改编后 {formatCharCount(group.compressedContent.length)}
+                            </span>
+                          ) : null}
                         </div>
                         {isFailed && group.compressError && (
                           <div className="mt-1 text-xs text-red-400">{group.compressError}</div>
                         )}
                       </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-xs"
-                        disabled={isCompressing || novelBatchRunning}
-                        onClick={() => handleNovelCompressOne(gi)}
-                      >
-                        {isCompressing ? <Loader2 className="w-3 h-3 animate-spin" /> : isDone ? "重新改编" : "改编"}
-                      </Button>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-xs"
+                          disabled={isCompressing || novelBatchRunning}
+                          onClick={() => handleNovelUseOriginalOne(gi)}
+                        >
+                          按原文
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 border-white/10 text-zinc-300 hover:bg-white/10 text-xs"
+                          disabled={isCompressing || novelBatchRunning}
+                          onClick={() => handleNovelCompressOne(gi)}
+                        >
+                          {isCompressing ? <Loader2 className="w-3 h-3 animate-spin" /> : isDone ? "重新改编" : "改编"}
+                        </Button>
+                      </div>
                     </div>
 
                     {isDone && group.compressedContent && (
                       <div className="rounded-lg bg-black/30 border border-white/8 p-3 space-y-2">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] text-zinc-500">改编结果（将作为该集大纲内容）</div>
+                          <div className="text-[10px] text-zinc-500">
+                            改编结果 · {formatCharCount(group.compressedContent.length)}（将作为该集大纲内容）
+                          </div>
                           <button
                             type="button"
                             className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
@@ -1631,7 +1839,7 @@ export default function ScriptWorkshopPage() {
                     onChange={(e) => setSourceText(e.target.value)}
                     className="min-h-[420px] bg-black/40 border-white/10 text-sm leading-relaxed resize-none focus:border-purple-500/50"
                     placeholder={
-                      "示例：\n\n女主发现自己每晚12点会回到同一天，她要在10集内找出真凶。\n要求：每集1分30秒，强钩子强反转，结尾留悬念。"
+                      "示例：\n\n女主发现自己每晚12点会回到同一天，她要在10集内找出真凶。\n要求：每集1分30秒，节奏紧凑，冲突密集。"
                     }
                   />
                 </div>
@@ -1862,27 +2070,6 @@ export default function ScriptWorkshopPage() {
                               {selectedOutline.summary}
                             </div>
                           </div>
-
-                          {selectedOutline.cliffhanger && (
-                            <div>
-                              <div className="flex items-center justify-between mb-1.5">
-                                <span className="text-xs text-zinc-500">结尾悬念</span>
-                                <button
-                                  type="button"
-                                  className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
-                                  onClick={() => setPreviewModal({
-                                    title: `第${selectedOutline.index}集 - 结尾悬念`,
-                                    content: selectedOutline.cliffhanger,
-                                  })}
-                                >
-                                  查看全文
-                                </button>
-                              </div>
-                              <div className="text-xs text-amber-300/80 leading-relaxed max-h-32 overflow-y-auto pr-1">
-                                {selectedOutline.cliffhanger}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>

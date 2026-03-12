@@ -21,7 +21,7 @@ import type { NovelChapter, NovelAdaptationGroup } from "@/lib/script-workshop/t
 const DEFAULT_SETTINGS: ScriptWorkshopSettings = {
   visualStyle: "anime",
   narrativeMode: "mixed",
-  tone: "悬疑+反转",
+  tone: "无",
   episodesCount: 10,
   episodeDurationSec: 90,
   avgShotSec: 3.5,
