@@ -5,7 +5,7 @@ import {
   ChevronLeft, ChevronRight, Plus, Search, MoreVertical,
   Wand2, Image as ImageIcon, Video, Upload, Play, Eye, X,
   Loader2, Check, Settings2, Users, MapPin, Layers, Download,
-  ListChecks, FileText, Sparkles, Box, Clock, Trash2, Copy,
+  ListChecks, FileText, Sparkles, Box, Trash2, Copy,
   GripVertical, ChevronDown, RefreshCw, Zap, Film, Camera
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -334,23 +334,11 @@ export default function StoryboardWorkbench({
   };
 
   // 全局默认时长/比例（也持久化）
-  const [defaultDuration, setDefaultDuration] = useState<number>(() => {
-    if (typeof window === "undefined") return 10;
-    const saved = localStorage.getItem("storyboard_defaultDuration");
-    return saved ? Number(saved) : 10;
-  });
-
   const [defaultRatio, setDefaultRatio] = useState<string>(() => {
     if (typeof window === "undefined") return "16:9";
     const saved = localStorage.getItem("storyboard_defaultRatio");
     return saved || "16:9";
   });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("storyboard_defaultDuration", String(defaultDuration));
-    }
-  }, [defaultDuration]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -704,10 +692,6 @@ export default function StoryboardWorkbench({
                 videoModelIdByMode={videoModelIdByMode}
                 videoModelByMode={videoModelByMode}
                 videoModelLabelByMode={videoModelLabelByMode}
-                img2vidVideoModels={img2vidVideoModels}
-                frame2frameVideoModels={frame2frameVideoModels}
-                fusionVideoModels={fusionVideoModels}
-                defaultDuration={defaultDuration}
                 defaultRatio={defaultRatio}
                 // 任务（首帧多图展示）
                 workflowTasks={workflowTasks}
@@ -770,9 +754,7 @@ export default function StoryboardWorkbench({
         onChangeImageModel={handleChangeImageModel}
         videoModelIdByMode={videoModelIdByMode}
         onChangeVideoModel={handleChangeVideoModel}
-        defaultDuration={defaultDuration}
         defaultRatio={defaultRatio}
-        onChangeDuration={setDefaultDuration}
         onChangeRatio={setDefaultRatio}
         selectedVideoInferenceTemplate={selectedVideoInferenceTemplate}
         selectedVideoInferenceTemplateType={selectedVideoInferenceTemplateType}

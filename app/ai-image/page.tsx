@@ -21,6 +21,7 @@ import { coinApi } from "@/lib/coinApi";
 import { wsService } from "@/lib/websocket";
 import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 import { useImageModels } from "@/lib/useImageModels";
+import { toOriginalUrl, toThumbnailUrl } from "@/lib/utils";
 
 // 聊天消息类型
 interface ChatMessage {
@@ -312,7 +313,7 @@ export default function AiImagePage() {
         .filter((item: any) => item.imageUrl)
         .slice(0, 10)
         .map((item: any) => item.imageUrl);
-      preloadImages(imageUrls);
+      preloadImages(imageUrls.map((u: string) => toThumbnailUrl(u, 800)));
     } catch (err) {
       console.error("Failed to fetch history", err);
     } finally {
@@ -767,17 +768,17 @@ export default function AiImagePage() {
                               ) : msg.imageUrl ? (
                                  <div className="group relative">
                                     <img 
-                                       src={msg.imageUrl} 
+                                       src={toThumbnailUrl(msg.imageUrl, 800)} 
                                        alt="生成的图片" 
                                        className="w-full max-h-[280px] object-contain cursor-pointer"
-                                       onClick={() => setPreviewImageUrl(msg.imageUrl!)}
+                                       onClick={() => setPreviewImageUrl(toOriginalUrl(msg.imageUrl!))}
                                     />
                                     <Button 
                                        size="icon" 
                                        className="absolute top-2 right-2 rounded-full w-8 h-8 shadow-lg bg-black/60 hover:bg-black/80 text-white border border-white/10 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-all" 
                                        onClick={(e) => {
                                           e.stopPropagation();
-                                          setPreviewImageUrl(msg.imageUrl!);
+                                          setPreviewImageUrl(toOriginalUrl(msg.imageUrl!));
                                        }}
                                        title="查看大图"
                                     >
@@ -1173,7 +1174,7 @@ export default function AiImagePage() {
                <div className="flex gap-4">
                   <div className="w-24 h-24 rounded-lg overflow-hidden border border-white/10 flex-shrink-0">
                      <img 
-                     src={selectedHistoryItem.imageUrl} 
+                     src={toThumbnailUrl(selectedHistoryItem.imageUrl, 200)} 
                      alt="Preview" 
                      className="w-full h-full object-cover"
                      />

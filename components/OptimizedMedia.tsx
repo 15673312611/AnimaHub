@@ -19,7 +19,8 @@ export function getOssThumbnail(
   if (!url) return url;
   
   // 只处理 OSS 链接
-  if (!url.includes("aliyuncs.com")) return url;
+  if (!url.startsWith("http://") && !url.startsWith("https://")) return url;
+  if (url.startsWith("data:") || url.startsWith("blob:")) return url;
   
   // 如果已经有处理参数，不重复添加
   if (url.includes("x-oss-process=")) return url;

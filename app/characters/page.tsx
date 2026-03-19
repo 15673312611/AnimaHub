@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast-provider";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, toThumbnailUrl } from "@/lib/utils";
 import { OptimizedImage, preloadImages } from "@/components/OptimizedMedia";
 
 interface Character {
@@ -69,7 +69,7 @@ export default function CharactersPage() {
         .filter((c: Character) => c.imageUrl)
         .slice(0, 8)
         .map((c: Character) => c.imageUrl!);
-      preloadImages(imageUrls);
+      preloadImages(imageUrls.map((u: string) => toThumbnailUrl(u, 800)));
     } catch (error) {
       console.error("Failed to load characters", error);
       toast("加载角色列表失败", "error");

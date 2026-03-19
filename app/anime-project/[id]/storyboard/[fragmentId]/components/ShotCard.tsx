@@ -84,10 +84,6 @@ interface Props {
   videoModelIdByMode: Record<StoryboardVideoModeCode, number | null>; // 视频模型ID（用于传递给后端）
   videoModelByMode: Record<StoryboardVideoModeCode, string>;          // 视频模型代码（用于前端显示）
   videoModelLabelByMode: Record<StoryboardVideoModeCode, string>;
-  img2vidVideoModels: { id: number; value: string; label: string; supportedDurations?: number[] }[];
-  frame2frameVideoModels: { id: number; value: string; label: string; supportedDurations?: number[] }[];
-  fusionVideoModels: { id: number; value: string; label: string; supportedDurations?: number[] }[];
-  defaultDuration: number;
   defaultRatio: string;
   // 任务（用于首帧多图展示）
   workflowTasks: TaskItem[];
@@ -158,10 +154,6 @@ export default function ShotCard({
   videoModelIdByMode,
   videoModelByMode,
   videoModelLabelByMode,
-  img2vidVideoModels,
-  frame2frameVideoModels,
-  fusionVideoModels,
-  defaultDuration,
   defaultRatio,
   workflowTasks,
   onRefreshTasks,
@@ -197,28 +189,12 @@ export default function ShotCard({
   const currentVideoModelLabel =
     videoModelLabelByMode[currentVideoModeCode] || currentVideoModel || "";
 
-  // 当前模式的模型列表
-  const currentModels = {
-    img2vid: img2vidVideoModels,
-    frame2frame: frame2frameVideoModels,
-    fusion: fusionVideoModels,
-  }[currentVideoModeCode] || [];
-
-  // 当前模型的配置
-  const currentModelConfig = currentModels.find((m) => m.value === currentVideoModel);
-  const supportedDurations = currentModelConfig?.supportedDurations || [];
-
-  // 时长/比例状态（使用全局默认值初始化）
-  const [selectedDuration, setSelectedDuration] = useState<number>(defaultDuration);
+  // 比例状态（使用全局默认值初始化）
   const [selectedRatio, setSelectedRatio] = useState<string>(defaultRatio);
   // 视频生成数量
   const [videoBatchCount, setVideoBatchCount] = useState<number>(1);
 
   // 当全局默认值变化时同步
-  useEffect(() => {
-    setSelectedDuration(defaultDuration);
-  }, [defaultDuration]);
-
   useEffect(() => {
     setSelectedRatio(defaultRatio);
   }, [defaultRatio]);
@@ -455,17 +431,17 @@ export default function ShotCard({
     } else {
       setVideoPromptValue(shot.userVideoPrompt || shot.videoPrompt || "");
     }
-  }, [mode, shot]);
+  }, [shot.id, shot.userFirstFramePrompt, shot.firstFramePrompt, shot.userVideoPrompt, shot.videoPrompt]);
 
   // 同步尾帧提示词（用于展示/编辑）
   useEffect(() => {
     setLastFramePromptValue(shot.lastFramePrompt || "");
-  }, [shot.lastFramePrompt]);
+  }, [shot.id, shot.lastFramePrompt]);
   
   // 同步台词内容
   useEffect(() => {
     setDialogueValue(shot.dialogue || "");
-  }, [shot.dialogue]);
+  }, [shot.id, shot.dialogue]);
   /**
    * 同步首帧生成状态到【图片四宫格】
    * 
@@ -1309,7 +1285,6 @@ export default function ShotCard({
           mode: genMode,
           batchCount: finalTargets.length,
           ...(videoModelId !== null ? { videoModelId } : {}),
-          duration: selectedDuration,
           ratio: selectedRatio,
           slotIndices: finalTargets, // 传入预分配的槽位
         });
@@ -1379,7 +1354,6 @@ export default function ShotCard({
           mode: genMode,
           batchCount: 1,
           ...(videoModelId !== null ? { videoModelId } : {}),
-          duration: selectedDuration,
           ratio: selectedRatio,
           slotIndices: targets, // 传入预分配的槽位
         });
@@ -1436,7 +1410,6 @@ export default function ShotCard({
           mode: genMode,
           batchCount: finalTargets.length,
           ...(videoModelId !== null ? { videoModelId } : {}),
-          duration: selectedDuration,
           ratio: selectedRatio,
           slotIndices: finalTargets, // 传入预分配的槽位
         });
@@ -1482,7 +1455,6 @@ export default function ShotCard({
         mode: genMode,
         batchCount: 1,
         ...(videoModelId !== null ? { videoModelId } : {}),
-        duration: selectedDuration,
         ratio: selectedRatio,
         slotIndices: [slotIndex], // 传入预分配的槽位
       });
@@ -1541,6 +1513,10 @@ export default function ShotCard({
       isFirstRenderRef.current.prompt = false;
       return;
     }
+    // 避免同步 shot -> state 时重复写回
+    if ((shot.userFirstFramePrompt || shot.firstFramePrompt || "") === promptValue) {
+      return;
+    }
     if (promptSaveTimerRef.current) {
       clearTimeout(promptSaveTimerRef.current);
     }
@@ -1552,13 +1528,17 @@ export default function ShotCard({
         clearTimeout(promptSaveTimerRef.current);
       }
     };
-  }, [promptValue, saveImagePrompt]);
+  }, [promptValue, saveImagePrompt, shot.userFirstFramePrompt, shot.firstFramePrompt]);
 
   // 视频提示词变化时自动保存（debounce 500ms）
   useEffect(() => {
     // 跳过首次渲染
     if (isFirstRenderRef.current.videoPrompt) {
       isFirstRenderRef.current.videoPrompt = false;
+      return;
+    }
+    // 避免同步 shot -> state 时重复写回
+    if ((shot.userVideoPrompt || shot.videoPrompt || "") === videoPromptValue) {
       return;
     }
     if (videoPromptSaveTimerRef.current) {
@@ -1572,7 +1552,7 @@ export default function ShotCard({
         clearTimeout(videoPromptSaveTimerRef.current);
       }
     };
-  }, [videoPromptValue, saveVideoPrompt]);
+  }, [videoPromptValue, saveVideoPrompt, shot.userVideoPrompt, shot.videoPrompt]);
 
   // 尾帧提示词变化时自动保存（debounce 500ms）
   useEffect(() => {
@@ -1605,6 +1585,10 @@ export default function ShotCard({
       isFirstRenderRef.current.dialogue = false;
       return;
     }
+    // 避免同步 shot -> state 时重复写回
+    if ((shot.dialogue || "") === dialogueValue) {
+      return;
+    }
     if (dialogueSaveTimerRef.current) {
       clearTimeout(dialogueSaveTimerRef.current);
     }
@@ -1616,7 +1600,7 @@ export default function ShotCard({
         clearTimeout(dialogueSaveTimerRef.current);
       }
     };
-  }, [dialogueValue, saveDialogue]);
+  }, [dialogueValue, saveDialogue, shot.dialogue]);
 
   // 台词脚本推理视频提示词（流式输出）
   const handleInferVideoPrompt = async () => {

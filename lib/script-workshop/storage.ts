@@ -100,6 +100,17 @@ export interface ScriptWorkshopProjectRecord {
   novelCompressTemplate?: { type: "system" | "user"; id: string }; // 压缩用提示词模板
 }
 
+export interface ScriptWorkshopProjectSummary {
+  id: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+  mode?: "normal" | "novel";
+  summary?: string;
+  settings?: Partial<ScriptWorkshopSettings>;
+  completedCount?: number;
+}
+
 const STORAGE_KEY = "script_workshop_projects_v1";
 
 export function loadProjectsFromStorage(): ScriptWorkshopProjectRecord[] {

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast-provider";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { MoreHorizontal, PenTool, Plus } from "lucide-react";
-import { newProjectId, type ScriptWorkshopProjectRecord } from "@/lib/script-workshop/storage";
+import { newProjectId, type ScriptWorkshopProjectRecord, type ScriptWorkshopProjectSummary } from "@/lib/script-workshop/storage";
 import {
   deleteScriptWorkshopProject,
   listScriptWorkshopProjects,
@@ -52,7 +52,7 @@ export default function ScriptWorkshopListPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
 
-  const [projects, setProjects] = useState<ScriptWorkshopProjectRecord[]>([]);
+  const [projects, setProjects] = useState<ScriptWorkshopProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -81,7 +81,7 @@ export default function ScriptWorkshopListPage() {
     const q = search.trim().toLowerCase();
     if (!q) return projects;
     return projects.filter((p) => {
-      const hay = `${p.title} ${p.sourceText || ""}`.toLowerCase();
+      const hay = `${p.title} ${p.summary || ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [projects, search]);
@@ -242,8 +242,8 @@ export default function ScriptWorkshopListPage() {
             {!loading && filtered.length > 0 ? (
               <div className="flex flex-wrap gap-3.5">
                 {filtered.map((p) => {
-                  const episodesCount = p.settings?.episodesCount || 0;
-                  const completedCount = Object.keys(p.episodeScripts || {}).length;
+                  const episodesCount = Number(p.settings?.episodesCount || 0);
+                  const completedCount = Number(p.completedCount || 0);
                   const progress = episodesCount > 0 ? Math.round((completedCount / episodesCount) * 100) : 0;
                   const isCompleted = progress === 100;
 
@@ -261,14 +261,14 @@ export default function ScriptWorkshopListPage() {
                         : "对话";
                   const aspectRatioLabel = p.settings?.aspectRatio || "9:16";
                   const toneLabel = p.settings?.tone || "悬疑+反转";
-                  const summary = p.sourceText?.trim() || "暂无剧情简介，点击卡片进入后可补充更完整的故事信息。";
+                  const summary = p.summary?.trim() || "暂无剧情简介，点击卡片进入后可补充更完整的故事信息。";
 
                   return (
                     <article
                       key={p.id}
                       className="group relative w-full max-w-[380px] cursor-pointer rounded-[16px] border border-[#383a46] bg-[linear-gradient(156deg,rgba(27,20,40,0.8),rgba(12,13,22,0.92)_58%,rgba(9,11,18,0.94))] px-4 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] transition-all duration-200 hover:border-[#575c72] hover:shadow-[0_14px_24px_rgba(7,8,14,0.68)]"
                       onClick={() => {
-                        const hasScripts = Object.keys(p.episodeScripts || {}).length > 0;
+                        const hasScripts = completedCount > 0;
                         if (hasScripts) {
                           router.push(`/script-workshop/pipeline/${encodeURIComponent(p.id)}`);
                         } else {

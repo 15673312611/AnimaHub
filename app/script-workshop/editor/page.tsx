@@ -974,6 +974,13 @@ export default function ScriptWorkshopPage() {
     if (!outlines) return 0;
     return outlines.filter((o) => !episodeScripts[o.index]).length;
   }, [outlines, episodeScripts]);
+  const shouldSyncNovelOutlines = useMemo(() => {
+    if (projectMode !== "novel") return false;
+    const doneGroups = novelGroups.filter((g) => g.compressStatus === "done" && g.compressedContent);
+    if (doneGroups.length === 0) return false;
+    const outlineIndex = new Set((outlines || []).map((o) => o.index));
+    return doneGroups.some((g) => !outlineIndex.has(g.episodeIndex));
+  }, [projectMode, novelGroups, outlines]);
 
   useEffect(() => {
     if (!outlines || outlines.length === 0) {
@@ -1054,6 +1061,31 @@ export default function ScriptWorkshopPage() {
         }
         ::-webkit-scrollbar-thumb:hover {
           background: rgba(168, 85, 247, 0.5);
+        }
+        @keyframes swFadeUp {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 8px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        .sw-page-enter {
+          animation: swFadeUp 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          will-change: transform, opacity;
+        }
+        .sw-view-enter {
+          animation: swFadeUp 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          will-change: transform, opacity;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sw-page-enter,
+          .sw-view-enter {
+            animation: none !important;
+            transform: none !important;
+          }
         }
       `}</style>
       <div className="min-h-screen bg-black text-white">
@@ -1563,7 +1595,7 @@ export default function ScriptWorkshopPage() {
 
       {/* Main */}
       <main className="max-w-7xl mx-auto px-6 py-6">
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 md:p-6 space-y-6">
+        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 md:p-6 space-y-6 sw-page-enter">
           {/* Stepper */}
           <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
@@ -1581,7 +1613,13 @@ export default function ScriptWorkshopPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setView("episodes")}
+                  onClick={() => {
+                    if (shouldSyncNovelOutlines) {
+                      handleNovelToOutlines();
+                      return;
+                    }
+                    setView("episodes");
+                  }}
                   disabled={!canGoEpisodes}
                   className={`px-3 py-2 rounded-lg text-sm transition ${
                     view === "episodes" ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
@@ -1646,7 +1684,7 @@ export default function ScriptWorkshopPage() {
         </div>
 
         {view === "novel" && (
-          <div className="space-y-4">
+          <div className="space-y-4 sw-view-enter">
             {/* 顶部操作栏 */}
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div className="flex items-center gap-4">
@@ -1815,7 +1853,7 @@ export default function ScriptWorkshopPage() {
         )}
 
         {view === "draft" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sw-view-enter">
             <div className="lg:col-span-8">
               <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
                 <div className="p-5 border-b border-white/10 flex items-center justify-between">
@@ -1924,7 +1962,7 @@ export default function ScriptWorkshopPage() {
         )}
 
         {view === "episodes" && (
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 sw-view-enter">
             {/* Episode list */}
             <div className="xl:col-span-4">
               <div className="rounded-2xl border border-white/10 bg-white/5 overflow-hidden">

@@ -91,6 +91,10 @@ interface EpisodeJobState {
   error?: string;
 }
 
+interface EpisodeEntry {
+  index: number;
+  script?: ScriptWorkshopEpisodeScript;
+}
 
 export default function ScriptWorkshopPipelinePage({ params }: { params: Promise<{ projectId: string }> }) {
   const router = useRouter();
@@ -126,10 +130,27 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     return projects.find((p) => p.id === selectedSwProjectId) || null;
   }, [projects, selectedSwProjectId]);
 
-  const episodes: ScriptWorkshopEpisodeScript[] = useMemo(() => {
-    const map = swProject?.episodeScripts || {};
-    return Object.values(map).sort((a, b) => a.index - b.index);
-  }, [swProject]);
+  const episodes: EpisodeEntry[] = useMemo(() => {
+    const scripts = swProject?.episodeScripts || {};
+    return Object.entries(scripts)
+      .map(([key, script]) => ({ index: Number(key), script }))
+      .filter((entry) => Number.isFinite(entry.index) && entry.script?.content?.trim())
+      .sort((a, b) => a.index - b.index);
+  }, [swProject?.episodeScripts]);
+
+  const projectMode = swProject?.mode === "novel" ? "novel" : "normal";
+  const outlineCount = swProject?.outlines?.length ?? 0;
+  const canGoEpisodes = outlineCount > 0;
+
+  const draftedCount = useMemo(() => {
+    const drafts = swProject?.episodeDrafts || {};
+    return Object.values(drafts).filter((draft) => Array.isArray((draft as any)?.shots) && (draft as any).shots.length > 0).length;
+  }, [swProject?.episodeDrafts]);
+
+  const importedCount = useMemo(() => {
+    const imports = swProject?.episodeImports || {};
+    return Object.values(imports).filter((item) => (item as any)?.status === "INFER_DONE").length;
+  }, [swProject?.episodeImports]);
 
   const outlineTitleByIndex = useMemo(() => {
     const m = new Map<number, string>();
@@ -210,22 +231,30 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
   const loadSwProjects = async () => {
     try {
       const list = await listScriptWorkshopProjects();
-      setProjects(list || []);
 
       const currentId = selectedIdRef.current;
-      if (!currentId) {
-        setSelectedSwProjectId(list[0]?.id || "");
+      const targetId = currentId || list[0]?.id || "";
+      if (!targetId) {
+        setProjects([]);
         return;
       }
 
-      const exists = (list || []).some((p) => p.id === currentId);
-      if (!exists) {
-        try {
-          const one = await getScriptWorkshopProject(currentId);
-          setProjects([one, ...(list || [])]);
-        } catch {
-          setSelectedSwProjectId((list || [])[0]?.id || "");
+      if (targetId !== currentId) {
+        setSelectedSwProjectId(targetId);
+      }
+
+      try {
+        const one = await getScriptWorkshopProject(targetId);
+        setProjects(one ? [one] : []);
+      } catch {
+        const fallbackId = list[0]?.id || "";
+        if (!fallbackId || fallbackId === targetId) {
+          setProjects([]);
+          return;
         }
+        setSelectedSwProjectId(fallbackId);
+        const one = await getScriptWorkshopProject(fallbackId);
+        setProjects(one ? [one] : []);
       }
     } catch (err) {
       console.error("加载剧本工坊项目失败", err);
@@ -246,6 +275,20 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    const id = selectedSwProjectId;
+    if (!id) return;
+    if (projectsRef.current.some((p) => p.id === id)) return;
+    void (async () => {
+      try {
+        const one = await getScriptWorkshopProject(id);
+        setProjects(one ? [one] : []);
+      } catch (e) {
+        console.error("加载剧本工坊项目失败", e);
+      }
+    })();
+  }, [selectedSwProjectId]);
 
   useEffect(() => {
     // init defaults
@@ -433,7 +476,11 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     updateEpisodeJob(ep.index, { status: "DONE", message: `生成完成 (${shots.length} 镜头)` });
   };
 
-  const handleGenerateEpisode = async (ep: ScriptWorkshopEpisodeScript) => {
+  const handleGenerateEpisode = async (ep: EpisodeEntry) => {
+    if (!ep.script?.content?.trim()) {
+      toast("该集尚未生成分集脚本，请先在编辑页生成", "error");
+      return;
+    }
     // Allow concurrent single-episode generation (no global lock)
     const job = episodeJobs[ep.index];
     const isWorking = Boolean(job && job.status !== "IDLE" && job.status !== "DONE" && job.status !== "FAILED");
@@ -441,7 +488,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     
     cancelRef.current = false;
     try {
-      await generateDraftEpisode(ep);
+      await generateDraftEpisode(ep.script);
     } catch (e: any) {
       const errMsg = e?.response?.data?.error || e?.message || "生成失败";
       updateEpisodeJob(ep.index, { status: "FAILED", error: errMsg });
@@ -468,6 +515,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
 
     // Filter out episodes that already have drafts or are currently generating
     const pendingEpisodes = episodes.filter((ep) => {
+      if (!ep.script?.content?.trim()) return false;
       const job = episodeJobs[ep.index];
       const isWorking = Boolean(job && job.status !== "IDLE" && job.status !== "DONE" && job.status !== "FAILED");
       const draft = current.episodeDrafts?.[ep.index];
@@ -476,7 +524,8 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
     });
 
     if (pendingEpisodes.length === 0) {
-      toast("没有待生成的集数（都已生成或正在生成中）", "info");
+      const hasMissingScripts = episodes.some((ep) => !ep.script?.content?.trim());
+      toast(hasMissingScripts ? "存在未生成脚本的集数，请先在编辑页生成分集脚本" : "没有待生成的集数（都已生成或正在生成中）", "info");
       return;
     }
 
@@ -497,7 +546,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
           chunk.map(async (ep) => {
             if (cancelRef.current) return;
             try {
-              await generateDraftEpisode(ep);
+              await generateDraftEpisode(ep.script!);
               results.push({ index: ep.index, success: true });
             } catch (e: any) {
               const errMsg = e?.response?.data?.error || e?.message || "生成失败";
@@ -530,11 +579,12 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
 
     // 筛选要导入的集数
     const targets = importTargetEpisodeIndex
-      ? ([episodes.find((e) => e.index === importTargetEpisodeIndex)].filter(Boolean) as ScriptWorkshopEpisodeScript[])
+      ? ([episodes.find((e) => e.index === importTargetEpisodeIndex)].filter(Boolean) as EpisodeEntry[])
       : episodes;
 
     // 过滤出有有效 draft 的集数
     const validTargets = targets.filter((ep) => {
+      if (!ep.script?.content?.trim()) return false;
       const draft = swProject.episodeDrafts?.[ep.index];
       return draft?.shots && draft.shots.length > 0;
     });
@@ -556,7 +606,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
         index: ep.index,
         title: getEpisodeTitle(ep.index),
         // 把原始分集脚本内容写入 workflow.scriptContent，避免导入后在分镜页提取角色/场景时报“没有剧本”。
-        scriptContent: formatEpisodeToText(ep),
+        scriptContent: formatEpisodeToText(ep.script!),
         shots: (swProject.episodeDrafts![ep.index].shots || []).map((s: any, idx: number) => ({
           index: s.index ?? idx + 1,
           action: s.action || s.description || "",
@@ -715,7 +765,49 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
   };
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <>
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(24, 24, 27, 0.4);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(168, 85, 247, 0.3);
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(168, 85, 247, 0.5);
+        }
+        @keyframes swFadeUp {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 8px, 0);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        .sw-page-enter {
+          animation: swFadeUp 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          will-change: transform, opacity;
+        }
+        .sw-view-enter {
+          animation: swFadeUp 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+          will-change: transform, opacity;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sw-page-enter,
+          .sw-view-enter {
+            animation: none !important;
+            transform: none !important;
+          }
+        }
+      `}</style>
+      <div className="min-h-screen bg-black text-white">
       {/* Background */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(168,85,247,0.16),transparent_40%),radial-gradient(circle_at_80%_0%,rgba(34,211,238,0.10),transparent_35%),radial-gradient(circle_at_50%_100%,rgba(236,72,153,0.08),transparent_40%)]" />
 
@@ -757,7 +849,7 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
             <div className="min-w-0">
               <div className="font-semibold leading-tight truncate">剧本工坊 · 分镜制作</div>
               <div className="text-[11px] text-zinc-500 truncate" suppressHydrationWarning>
-                {mounted ? (swProject ? `${swProject.title} · ${episodes.length} 集` : "请选择剧本") : "加载中..."}
+                {mounted ? (swProject ? `03 分镜导入 · ${swProject.title} · ${episodes.length} 集` : "请选择剧本") : "加载中..."}
               </div>
             </div>
           </div>
@@ -826,239 +918,325 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-6 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column - Configuration */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Project Info Card */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-purple-500/5 via-transparent to-pink-500/5 p-5">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(168,85,247,0.08),transparent_50%)]" />
-              
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                    <Clapperboard className="w-4 h-4 text-purple-300" />
-                  </div>
-                  <div className="text-sm font-semibold text-zinc-200">当前剧本</div>
-                </div>
-                
-                <div className="text-lg font-bold bg-gradient-to-r from-white to-zinc-300 bg-clip-text text-transparent mb-1" suppressHydrationWarning>
-                  {mounted ? (swProject?.title || "未命名剧本") : "加载中..."}
-                </div>
-                <div className="text-xs text-zinc-500 mb-4" suppressHydrationWarning>
-                  {mounted ? `${episodes.length} 个分集脚本` : "-"}
-                </div>
-                
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-4" />
-                
-                <div className="text-xs text-zinc-400 space-y-1.5">
-                  <p className="flex items-start gap-2">
-                    <span className="text-purple-400 mt-0.5">•</span>
-                    <span>先在左侧选择模板，再点击各集的“生成分镜”。</span>
-                  </p>
-                  <p className="flex items-start gap-2">
-                    <span className="text-purple-400 mt-0.5">•</span>
-                    <span>生成后可在详情里编辑，确认后再“导入到项目”。</span>
-                  </p>
-                </div>
-              </div>
+        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm p-4 md:p-6 space-y-6 sw-page-enter">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+              {projectMode === "novel" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selectedSwProjectId;
+                      router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                    }}
+                    className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5"
+                  >
+                    01 章节改编
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canGoEpisodes) return;
+                      const id = selectedSwProjectId;
+                      router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                    }}
+                    disabled={!canGoEpisodes}
+                    className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    02 分集脚本
+                  </button>
+                  <button
+                    type="button"
+                    aria-current="step"
+                    className="px-3 py-2 rounded-lg text-sm transition bg-white/10 text-white cursor-default"
+                  >
+                    03 分镜导入
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selectedSwProjectId;
+                      router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                    }}
+                    className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5"
+                  >
+                    01 灵感
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!canGoEpisodes) return;
+                      const id = selectedSwProjectId;
+                      router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                    }}
+                    disabled={!canGoEpisodes}
+                    className="px-3 py-2 rounded-lg text-sm transition text-zinc-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:hover:bg-transparent"
+                  >
+                    02 分集脚本
+                  </button>
+                  <button
+                    type="button"
+                    aria-current="step"
+                    className="px-3 py-2 rounded-lg text-sm transition bg-white/10 text-white cursor-default"
+                  >
+                    03 分镜导入
+                  </button>
+                </>
+              )}
             </div>
 
-            {/* AI Model Configuration */}
-            <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-blue-500/5 p-5 space-y-4">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(34,211,238,0.08),transparent_50%)]" />
-              
-              <div className="relative flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
-                  <Wand2 className="w-4 h-4 text-cyan-300" />
-                </div>
-                <div className="text-sm font-semibold text-zinc-200">AI 模板配置</div>
-              </div>
-
-              <div className="relative space-y-3">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs text-zinc-500">分镜模板</label>
-                  <div className="flex text-[10px] bg-black/30 border border-white/10 rounded overflow-hidden">
-                    <button onClick={() => setStoryboardTab("system")} className={`px-2 py-1 transition-colors ${storyboardTab==="system"?"bg-white/10 text-white":"text-zinc-500 hover:text-zinc-300"}`}>系统</button>
-                    <button onClick={() => setStoryboardTab("user")} className={`px-2 py-1 transition-colors ${storyboardTab==="user"?"bg-white/10 text-white":"text-zinc-500 hover:text-zinc-300"}`}>我的</button>
-                  </div>
-                </div>
-                
-                <Select
-                    value={storyboardTemplate.id || ""}
-                    onValueChange={(val) => {
-                        const next = { type: storyboardTab, id: val };
-                        setStoryboardTemplate(next);
-                        void persistSwProject({ storyboardTemplate: next });
-                    }}
-                >
-                  <SelectTrigger className="bg-black/40 border-white/10 text-zinc-300">
-                    <SelectValue placeholder="请选择..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {storyboardTab === "system" ? (
-                        storyboardSystemTemplates.map(t => <SelectItem key={t.code} value={t.code}>{t.name}</SelectItem>)
-                    ) : (
-                        storyboardUserTemplates.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.templateName}</SelectItem>)
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="h-px w-full bg-white/10" />
-
-              <div className="relative space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs text-zinc-500">单镜头推理模板（首尾帧 + 视频，一次生成）</label>
-                  {loadingInferenceTemplates ? <div className="text-[10px] text-zinc-600">加载中...</div> : null}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs text-zinc-500">推理模板</label>
-                    <div className="flex text-[10px] bg-black/30 border border-white/10 rounded overflow-hidden">
-                      <button
-                        onClick={() => setShotInferenceTab("system")}
-                        className={`px-2 py-1 transition-colors ${
-                          shotInferenceTab === "system" ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
-                        }`}
-                      >
-                        系统
-                      </button>
-                      <button
-                        onClick={() => setShotInferenceTab("user")}
-                        className={`px-2 py-1 transition-colors ${
-                          shotInferenceTab === "user" ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
-                        }`}
-                      >
-                        我的
-                      </button>
-                    </div>
-                  </div>
-
-                  <Select
-                    value={shotInferenceTemplate.id || ""}
-                    onValueChange={(val) => {
-                      const next = { type: shotInferenceTab, id: val };
-                      setShotInferenceTemplate(next);
-                      void persistSwProject({ shotPromptsInferenceTemplate: next });
-                    }}
-                  >
-                    <SelectTrigger className="bg-black/40 border-white/10 text-zinc-300">
-                      <SelectValue placeholder={loadingInferenceTemplates ? "加载中..." : "请选择..."} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {shotInferenceTab === "system" ? (
-                        shotInferenceSystemTemplates.map((t) => (
-                          <SelectItem key={t.templateCode} value={t.templateCode}>
-                            {t.templateName}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        shotInferenceUserTemplates.map((t) => (
-                          <SelectItem key={t.id} value={String(t.id)}>
-                            {t.templateName}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-
-                  <div className="text-[10px] text-zinc-600">用于详情弹窗的“推理 / 重新生成”按钮，不影响批量生成分镜。</div>
-                </div>
-              </div>
+            <div className="ml-auto text-xs text-zinc-500" suppressHydrationWarning>
+              {outlineCount > 0 ? (
+                <span>
+                  大纲 {outlineCount} 集 · 脚本 {episodes.length} 集 · 分镜 {draftedCount} 集 · 已导入 {importedCount} 集
+                </span>
+              ) : (
+                <span>先在编辑页生成大纲和脚本</span>
+              )}
             </div>
           </div>
 
-          {/* Right Column - Episode Queue */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* Progress Stats */}
-            {episodes.length > 0 && (
-              <div className="rounded-2xl bg-zinc-900/40 border border-white/5 p-1 backdrop-blur-xl">
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 bg-white/[0.02] rounded-xl border border-white/[0.02]">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/10 shadow-inner">
-                      <Sparkles className="w-4 h-4 text-purple-300" />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column - Configuration */}
+            <div className="lg:col-span-4 space-y-6">
+              {/* Project Info Card */}
+              <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-purple-500/5 via-transparent to-pink-500/5 p-5">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(168,85,247,0.08),transparent_50%)]" />
+                
+                <div className="relative">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                      <Clapperboard className="w-4 h-4 text-purple-300" />
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-white tracking-tight">生产队列</div>
-                      <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">Production Queue</div>
-                    </div>
+                    <div className="text-sm font-semibold text-zinc-200">当前剧本</div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-white/5">
-                      <span className="text-[10px] text-zinc-500 font-bold">TOTAL</span>
-                      <span className="text-xs font-mono text-white">{progressStats.total}</span>
-                    </div>
-                    
-                    {progressStats.done > 0 && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_10px_-4px_rgba(16,185,129,0.3)]">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span className="text-[10px] text-emerald-400 font-bold">DONE</span>
-                        <span className="text-xs font-mono text-emerald-300">{progressStats.done}</span>
-                      </div>
-                    )}
-                    
-                    {progressStats.inProgress > 0 && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 shadow-[0_0_10px_-4px_rgba(245,158,11,0.3)]">
-                        <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
-                        <span className="text-[10px] text-amber-400 font-bold">RUNNING</span>
-                        <span className="text-xs font-mono text-amber-300">{progressStats.inProgress}</span>
-                      </div>
-                    )}
-                    
-                    {progressStats.failed > 0 && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 shadow-[0_0_10px_-4px_rgba(239,68,68,0.3)]">
-                        <XCircle className="w-3 h-3 text-red-400" />
-                        <span className="text-[10px] text-red-400 font-bold">FAILED</span>
-                        <span className="text-xs font-mono text-red-300">{progressStats.failed}</span>
-                      </div>
-                    )}
+                  <div className="text-lg font-bold bg-gradient-to-r from-white to-zinc-300 bg-clip-text text-transparent mb-1" suppressHydrationWarning>
+                    {mounted ? (swProject?.title || "未命名剧本") : "加载中..."}
+                  </div>
+                  <div className="text-xs text-zinc-500 mb-4" suppressHydrationWarning>
+                    {mounted ? `${episodes.length} 个分集脚本` : "-"}
+                  </div>
+                  
+                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent my-4" />
+                  
+                  <div className="text-xs text-zinc-400 space-y-1.5">
+                    <p className="flex items-start gap-2">
+                      <span className="text-purple-400 mt-0.5">•</span>
+                      <span>先在左侧选择模板，再点击各集的“生成分镜”。</span>
+                    </p>
+                    <p className="flex items-start gap-2">
+                      <span className="text-purple-400 mt-0.5">•</span>
+                      <span>生成后可在详情里编辑，确认后再“导入到项目”。</span>
+                    </p>
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* Episode Grid */}
-            {episodes.length === 0 ? (
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-20 flex flex-col items-center justify-center">
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 mb-4">
-                  <Sparkles className="w-5 h-5" />
+              {/* AI Model Configuration */}
+              <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-500/5 via-transparent to-blue-500/5 p-5 space-y-4">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(34,211,238,0.08),transparent_50%)]" />
+                
+                <div className="relative flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                    <Wand2 className="w-4 h-4 text-cyan-300" />
+                  </div>
+                  <div className="text-sm font-semibold text-zinc-200">AI 模板配置</div>
                 </div>
-                <p className="text-sm text-zinc-400 font-medium">暂无分集脚本</p>
-                <p className="text-xs text-zinc-600 mt-1">请先在编辑页生成分集大纲和脚本</p>
-                <Button
-                  variant="outline"
-                  className="mt-4 border-white/10 text-zinc-300 hover:bg-white/10"
-                  onClick={() => {
-                      const id = selectedSwProjectId;
-                      router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
-                  }}
-                >
-                  前往编辑
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {episodes.map((ep) => {
-                  const job = episodeJobs[ep.index];
-                  const draft = swProject?.episodeDrafts?.[ep.index];
-                  const imported = swProject?.episodeImports?.[ep.index];
+
+                <div className="relative space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs text-zinc-500">分镜模板</label>
+                    <div className="flex text-[10px] bg-black/30 border border-white/10 rounded overflow-hidden">
+                      <button onClick={() => setStoryboardTab("system")} className={`px-2 py-1 transition-colors ${storyboardTab==="system"?"bg-white/10 text-white":"text-zinc-500 hover:text-zinc-300"}`}>系统</button>
+                      <button onClick={() => setStoryboardTab("user")} className={`px-2 py-1 transition-colors ${storyboardTab==="user"?"bg-white/10 text-white":"text-zinc-500 hover:text-zinc-300"}`}>我的</button>
+                    </div>
+                  </div>
                   
-                  // Status logic
-                  const isWorking = Boolean(job && job.status !== "IDLE" && job.status !== "DONE" && job.status !== "FAILED");
-                  const hasDraft = Boolean(draft?.shots && draft.shots.length > 0);
-                  const isImported = imported?.status === "INFER_DONE";
+                  <Select
+                      value={storyboardTemplate.id || ""}
+                      onValueChange={(val) => {
+                          const next = { type: storyboardTab, id: val };
+                          setStoryboardTemplate(next);
+                          void persistSwProject({ storyboardTemplate: next });
+                      }}
+                  >
+                    <SelectTrigger className="bg-black/40 border-white/10 text-zinc-300">
+                      <SelectValue placeholder="请选择..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {storyboardTab === "system" ? (
+                          storyboardSystemTemplates.map(t => <SelectItem key={t.code} value={t.code}>{t.name}</SelectItem>)
+                      ) : (
+                          storyboardUserTemplates.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.templateName}</SelectItem>)
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="h-px w-full bg-white/10" />
+
+                <div className="relative space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-zinc-500">单镜头推理模板（首尾帧 + 视频，一次生成）</label>
+                    {loadingInferenceTemplates ? <div className="text-[10px] text-zinc-600">加载中...</div> : null}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs text-zinc-500">推理模板</label>
+                      <div className="flex text-[10px] bg-black/30 border border-white/10 rounded overflow-hidden">
+                        <button
+                          onClick={() => setShotInferenceTab("system")}
+                          className={`px-2 py-1 transition-colors ${
+                            shotInferenceTab === "system" ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
+                          }`}
+                        >
+                          系统
+                        </button>
+                        <button
+                          onClick={() => setShotInferenceTab("user")}
+                          className={`px-2 py-1 transition-colors ${
+                            shotInferenceTab === "user" ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
+                          }`}
+                        >
+                          我的
+                        </button>
+                      </div>
+                    </div>
+
+                    <Select
+                      value={shotInferenceTemplate.id || ""}
+                      onValueChange={(val) => {
+                        const next = { type: shotInferenceTab, id: val };
+                        setShotInferenceTemplate(next);
+                        void persistSwProject({ shotPromptsInferenceTemplate: next });
+                      }}
+                    >
+                      <SelectTrigger className="bg-black/40 border-white/10 text-zinc-300">
+                        <SelectValue placeholder={loadingInferenceTemplates ? "加载中..." : "请选择..."} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shotInferenceTab === "system" ? (
+                          shotInferenceSystemTemplates.map((t) => (
+                            <SelectItem key={t.templateCode} value={t.templateCode}>
+                              {t.templateName}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          shotInferenceUserTemplates.map((t) => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                              {t.templateName}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+
+                    <div className="text-[10px] text-zinc-600">用于详情弹窗的“推理 / 重新生成”按钮，不影响批量生成分镜。</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Episode Queue */}
+            <div className="lg:col-span-8 space-y-6">
+              {/* Progress Stats */}
+              {episodes.length > 0 && (
+                <div className="rounded-2xl bg-zinc-900/40 border border-white/5 p-1 backdrop-blur-xl">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 py-3 bg-white/[0.02] rounded-xl border border-white/[0.02]">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/10 shadow-inner">
+                        <Sparkles className="w-4 h-4 text-purple-300" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-bold text-white tracking-tight">生产队列</div>
+                        <div className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">Production Queue</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 border border-white/5">
+                        <span className="text-[10px] text-zinc-500 font-bold">TOTAL</span>
+                        <span className="text-xs font-mono text-white">{progressStats.total}</span>
+                      </div>
+                      
+                      {progressStats.done > 0 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_10px_-4px_rgba(16,185,129,0.3)]">
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          <span className="text-[10px] text-emerald-400 font-bold">DONE</span>
+                          <span className="text-xs font-mono text-emerald-300">{progressStats.done}</span>
+                        </div>
+                      )}
+                      
+                      {progressStats.inProgress > 0 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 shadow-[0_0_10px_-4px_rgba(245,158,11,0.3)]">
+                          <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+                          <span className="text-[10px] text-amber-400 font-bold">RUNNING</span>
+                          <span className="text-xs font-mono text-amber-300">{progressStats.inProgress}</span>
+                        </div>
+                      )}
+                      
+                      {progressStats.failed > 0 && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 shadow-[0_0_10px_-4px_rgba(239,68,68,0.3)]">
+                          <XCircle className="w-3 h-3 text-red-400" />
+                          <span className="text-[10px] text-red-400 font-bold">FAILED</span>
+                          <span className="text-xs font-mono text-red-300">{progressStats.failed}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Episode Grid */}
+              {episodes.length === 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-20 flex flex-col items-center justify-center">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-300 mb-4">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <p className="text-sm text-zinc-400 font-medium">暂无分集脚本</p>
+                  <p className="text-xs text-zinc-600 mt-1">请先在编辑页生成分集大纲和脚本</p>
+                  <Button
+                    variant="outline"
+                    className="mt-4 border-white/10 text-zinc-300 hover:bg-white/10"
+                    onClick={() => {
+                        const id = selectedSwProjectId;
+                        router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                    }}
+                  >
+                    前往编辑
+                  </Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {episodes.map((ep) => {
+                    const job = episodeJobs[ep.index];
+                    const draft = swProject?.episodeDrafts?.[ep.index];
+                    const imported = swProject?.episodeImports?.[ep.index];
+                    const hasScript = Boolean(ep.script?.content?.trim());
+                    
+                    // Status logic
+                    const isWorking = Boolean(job && job.status !== "IDLE" && job.status !== "DONE" && job.status !== "FAILED");
+                    const hasDraft = Boolean(draft?.shots && draft.shots.length > 0);
+                    const isImported = imported?.status === "INFER_DONE";
                   
                   // Visual Logic
                   let accentColor = "zinc"; // default
-                  let statusLabel = "等待生成";
+                  let statusLabel = hasScript ? "待生成分镜" : "脚本未生成";
                   let statusIcon = <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />;
                   
                   if (isImported) {
                     accentColor = "emerald";
                     statusLabel = "已导入项目";
                     statusIcon = <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />;
+                  } else if (!hasScript) {
+                    accentColor = "zinc";
+                    statusLabel = "脚本未生成";
+                    statusIcon = <div className="w-1.5 h-1.5 rounded-full bg-zinc-600" />;
                   } else if (isWorking) {
                     accentColor = "amber";
                     statusLabel = job?.message || "正在生成...";
@@ -1145,7 +1323,18 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
 
                       {/* Actions Area - Separated by subtle line */}
                       <div className="relative mt-auto p-4 pt-4 border-t border-white/5 z-10 bg-white/[0.01]">
-                        {hasDraft ? (
+                        {!hasScript ? (
+                          <Button
+                            size="sm"
+                            className="w-full bg-zinc-800/30 hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200 border border-white/5 hover:border-white/10 text-xs h-9 transition-all"
+                            onClick={() => {
+                              const id = selectedSwProjectId;
+                              router.push(id ? `/script-workshop/editor?projectId=${encodeURIComponent(id)}` : "/script-workshop");
+                            }}
+                          >
+                            去生成脚本
+                          </Button>
+                        ) : hasDraft ? (
                           <div className="grid grid-cols-2 gap-3">
                             <Button 
                               size="sm" 
@@ -1238,7 +1427,9 @@ export default function ScriptWorkshopPipelinePage({ params }: { params: Promise
             )}
           </div>
         </div>
+        </div>
       </main>
     </div>
+    </>
   );
 }

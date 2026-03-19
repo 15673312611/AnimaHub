@@ -12,7 +12,7 @@ import { Loader2, Sparkles, Upload, Image as ImageIcon, Users, Map, Box, Wand2, 
 import { useToast } from "@/components/ui/toast-provider";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, toThumbnailUrl } from "@/lib/utils";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ImageUploader from "../anime-project/[id]/components/ImageUploader";
 import ModelSelector from "../anime-project/[id]/components/ModelSelector";
@@ -109,7 +109,7 @@ export default function PublicAssetsPage() {
           .filter((a: PublicAsset) => a.imageUrl)
           .slice(0, 8)
           .map((a: PublicAsset) => a.imageUrl!);
-        preloadImages(imageUrls);
+        preloadImages(imageUrls.map((u: string) => toThumbnailUrl(u, 800)));
       }
     } catch (error) {
       console.error("Failed to load public assets", error);

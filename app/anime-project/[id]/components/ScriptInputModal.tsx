@@ -18,6 +18,10 @@ interface ScriptInputModalProps {
   projectId: number;
   fragmentId: number;
   onSuccess: () => void;
+  /** 由“工作流预设”驱动的默认模板选择 */
+  initialTemplate?: { type: 'system' | 'user'; id: string } | null;
+  /** 预设已确定模板时，可隐藏模板选择器，避免新手二次配置 */
+  hideTemplateSelector?: boolean;
 }
 
 // 系统模板
@@ -49,7 +53,6 @@ const APPENDED_JSON_BLOCK_MARKER = "【系统追加：输出 JSON 示例（请�
 const REQUIRED_SHOT_FIELDS = [
   "description",
   "dialogue",
-  "duration",
   "firstFramePrompt",
   "cameraMovement",
   "videoPrompt",
@@ -70,7 +73,6 @@ const DEFAULT_STORYBOARD_JSON_EXAMPLE_TEXT = `{
     {
       "description": "教室黄昏A被叫住回头",
       "dialogue": "B：那个...请等一下！\\nA：嗯？",
-      "duration": 10,
       "firstFramePrompt": "16:9横屏，黄昏的日式教室，金橙色夕阳从左侧窗户射入，课桌椅排列整齐；机位在教室走道平视，中景构图。A=黑发马尾JK校服，背对镜头正要走出教室门，身体正直；B=短发害羞男生，站在画面深处走廊口；主光来自左侧强夕阳，逆光氛围，A的发丝有金色轮缘光。",
       "cameraMovement": "背影跟拍→声音停止→慢动作回头→特写表情",
       "videoPrompt": "动漫风格，高画质，精细五官，有音效，无音乐，无字幕，运镜丝滑，人物动作流畅。\\n[0s-0.3s]|参考人物，持续0.3秒\\n(0.3s-4.0s)|强制切画面 Transition:定切|黄昏教室，夕阳左射，课桌整齐；空间布局：窗户在左，A在前景背对，B在后景深处；机位平视中景，A背着书包正常行走，刚要迈出门口，B在远处张嘴喊话，身体前倾；光线：左侧强暖逆光|运镜:跟随A前行|台词:B：那个...请等一下！\\n(4.0s-7.5s)|强制切画面 Transition:甩镜|同黄昏教室，机位切换到A的侧面近景（侧颜杀），A停下脚步，头发因惯性微微飘动，慢慢转头转向后方，眼神从疑惑转为惊讶，眼睛大而明亮；背景虚化；光线：侧逆光勾勒轮廓|运镜:慢速平移绕半圈|台词:A：嗯？\\n(7.5s-10.0s)|强制切画面 Transition:主观视角|B的主观视角看A，A完全转过身来，正面中景，表情定格在惊讶，微微张嘴，脸颊微红，双手抓着书包带子停在胸前半拍；背景是教室走廊|运镜:轻微呼吸感推拉|台词:[无]",
@@ -113,7 +115,6 @@ const DEFAULT_USER_PROMPT = `你是一位顶级动漫分镜导演，擅长制作
 每个 shot 代表一个10秒的视频生成段，必须包含以下字段：
 - description: 本段剧情一句话摘要（中文，20字内）。
 - dialogue: 本段内的所有对白，用 \\n 分行。不能为空。
-- duration: 固定为 10（整数）。
 - firstFramePrompt: 0.0s 静态起始帧。必须包含：16:9横屏 + 场景锚点 + 空间布局 + 人物动作起始态 + 光影。禁止对白/字幕。
 - cameraMovement: 简述本段运镜逻辑（如：推镜头→定格→特写）。
 - videoPrompt: 核心脚本。内部必须用 \\n 换行，结构严格如下：
@@ -170,19 +171,26 @@ function validateStoryboardJsonExampleText(jsonText: string): JsonValidationResu
     };
   }
 
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    errors.push("顶层必须是 JSON 对象，例如：{\"shots\":[...]}。");
-    return { valid: false, errors, warnings };
-  }
+  // 兼容两种格式：{"shots": [...]} 或直接 [{...}]
+  let shots: any[];
 
-  const keys = Object.keys(parsed);
-  if (!(keys.length === 1 && keys[0] === "shots")) {
-    errors.push("顶层仅允许包含一个字段：shots。请保持格式为 {\"shots\":[...]}。");
-  }
+  if (Array.isArray(parsed)) {
+    // AI 直接返回数组格式：[{...}]
+    shots = parsed;
+  } else if (parsed && typeof parsed === "object") {
+    // AI 返回对象格式：{"shots": [...]}
+    const keys = Object.keys(parsed);
+    if (!(keys.length === 1 && keys[0] === "shots")) {
+      errors.push("顶层仅允许包含一个字段：shots。请保持格式为 {\"shots\":[...]}。");
+    }
 
-  const shots = (parsed as any).shots;
-  if (!Array.isArray(shots)) {
-    errors.push("shots 必须是数组，例如：{\"shots\":[{...}]}。");
+    shots = (parsed as any).shots;
+    if (!Array.isArray(shots)) {
+      errors.push("shots 必须是数组，例如：{\"shots\":[{...}]}。");
+      return { valid: false, errors, warnings };
+    }
+  } else {
+    errors.push("顶层必须是 JSON 对象或数组，例如：{\"shots\":[...]} 或 [{...}]。");
     return { valid: false, errors, warnings };
   }
 
@@ -215,12 +223,6 @@ function validateStoryboardJsonExampleText(jsonText: string): JsonValidationResu
       if (f in s && typeof s[f] !== "string") {
         errors.push(`shots[${idx}].${f} 必须是字符串。`);
       }
-    }
-
-    if ("duration" in s && typeof s.duration !== "number") {
-      errors.push(`shots[${idx}].duration 必须是数字。`);
-    } else if (typeof s.duration === "number" && s.duration !== 10) {
-      warnings.push(`shots[${idx}].duration 建议固定为 10（当前为 ${s.duration}）。`);
     }
 
     if (typeof s.dialogue === "string" && !s.dialogue.trim()) {
@@ -317,7 +319,9 @@ export default function ScriptInputModal({
   onOpenChange, 
   projectId,
   fragmentId,
-  onSuccess 
+  onSuccess,
+  initialTemplate = null,
+  hideTemplateSelector = false,
 }: ScriptInputModalProps) {
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -337,6 +341,15 @@ export default function ScriptInputModal({
   // 选中状态
   const [selectedType, setSelectedType] = useState<'system' | 'user'>('system');
   const [selectedId, setSelectedId] = useState<string>("");
+
+  // 预设驱动：弹窗打开时写入默认模板选择（不影响未使用预设的旧逻辑）
+  useEffect(() => {
+    if (!open) return;
+    if (!initialTemplate?.id) return;
+    setActiveTab(initialTemplate.type);
+    setSelectedType(initialTemplate.type);
+    setSelectedId(initialTemplate.id);
+  }, [open, initialTemplate?.type, initialTemplate?.id]);
   
   // 生成状态
   const [generating, setGenerating] = useState(false);
@@ -363,10 +376,10 @@ export default function ScriptInputModal({
       const res = await api.get<Template[]>("/storyboard-templates");
       console.log("✅ 加载到的分镜模板:", res.data);
       setSystemTemplates(res.data);
-      // 默认选中第一个模板
-      if (res.data.length > 0 && !selectedId) {
-        setSelectedType('system');
-        setSelectedId(res.data[0].code);
+      // 默认选中第一个模板：用函数式更新避免异步竞态覆盖预设选择
+      if (res.data.length > 0) {
+        const firstCode = res.data[0].code;
+        setSelectedId((prev) => prev || firstCode);
       }
     } catch (error: any) {
       // 兜底：后端未配置模板时，使用本地默认模板
@@ -375,10 +388,7 @@ export default function ScriptInputModal({
         { code: "storyboard_shots_default", name: "标准分镜模板(内置)", description: "生成基础分镜(仅镜头)，适合通用剧情" },
       ];
       setSystemTemplates(fallbackTemplates);
-      if (!selectedId) {
-        setSelectedType('system');
-        setSelectedId(fallbackTemplates[0].code);
-      }
+      setSelectedId((prev) => prev || fallbackTemplates[0].code);
     } finally {
       setLoadingSystem(false);
     }
@@ -711,6 +721,7 @@ export default function ScriptInputModal({
             {/* 右侧：配置与操作 */}
             <div className="md:col-span-5 flex flex-col gap-4">
               {/* 模板选择 */}
+              {!hideTemplateSelector ? (
               <div className="space-y-3">
                 <Label className="text-sm font-medium text-zinc-300 flex items-center gap-2">
                   <div className="w-1 h-4 bg-indigo-500 rounded-full" />
@@ -914,6 +925,25 @@ export default function ScriptInputModal({
                   </div>
                 )}
               </div>
+              ) : (
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+                    <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                    生成模板
+                  </Label>
+                  <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-3">
+                    <p className="text-xs text-zinc-400">
+                      当前已按预设选择模板：
+                      <span className="text-zinc-200 ml-1">
+                        {selectedType === "system"
+                          ? (selectedSystemTemplate?.name || selectedId || "系统模板")
+                          : (selectedUserTemplate?.templateName || selectedId || "我的模板")}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-zinc-500 mt-1">如需修改，请返回上一步调整预设配置。</p>
+                  </div>
+                </div>
+              )}
 
               {/* 底部操作区 */}
               <div className="mt-auto pt-4 border-t border-white/5 space-y-4">
@@ -1127,7 +1157,6 @@ function TemplateEditModal({
                 ，shots 内每个对象必须包含：
                 <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">description</code>,
                 <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">dialogue</code>,
-                <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">duration</code>,
                 <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">firstFramePrompt</code>,
                 <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">cameraMovement</code>,
                 <code className="px-1 py-0.5 rounded bg-amber-500/20 text-amber-200 text-[11px]">videoPrompt</code>,
@@ -1139,7 +1168,7 @@ function TemplateEditModal({
             <Textarea
               value={jsonExampleText}
               onChange={e => setJsonExampleText(e.target.value)}
-              placeholder='{"shots":[{"description":"...","dialogue":"...\\n...","duration":10,...}]}'
+              placeholder='{"shots":[{"description":"...","dialogue":"...\\n...","firstFramePrompt":"...","cameraMovement":"...","videoPrompt":"...","endState":"..."}]}'
               className="bg-zinc-900/50 border-zinc-700 min-h-[320px] resize-none focus:ring-amber-500/30 focus:border-amber-500/50 font-mono text-xs leading-relaxed"
             />
 

@@ -38,6 +38,7 @@ import PropsTab from "./components/PropsTab";
 import EffectsTab from "./components/EffectsTab";
 import CompositeTab from "./components/CompositeTab";
 import ScriptInputModal from "./components/ScriptInputModal";
+import WorkflowPresetModal, { type TemplateRef } from "./components/WorkflowPresetModal";
 
 interface Project {
   id: number;
@@ -71,6 +72,11 @@ export default function AnimeProjectPage() {
   // Script Input Modal State
   const [showScriptInput, setShowScriptInput] = useState(false);
   const [selectedFragmentId, setSelectedFragmentId] = useState<number | null>(null);
+
+  // Workflow Preset State (before storyboard generation)
+  const [showWorkflowPreset, setShowWorkflowPreset] = useState(false);
+  const [scriptInputInitialTemplate, setScriptInputInitialTemplate] = useState<TemplateRef | null>(null);
+  const [hideScriptTemplateSelector, setHideScriptTemplateSelector] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -174,9 +180,12 @@ export default function AnimeProjectPage() {
       if (workflow && workflow.shots && workflow.shots.length > 0) {
         router.push(`/anime-project/${project?.id}/storyboard/${fragmentId}`);
       } else {
-        // 没有内容，弹出剧本输入框
+        // 没有内容：先进入“工作流预设”，确认后再进入剧本输入框
         setSelectedFragmentId(fragmentId);
-        setShowScriptInput(true);
+        setScriptInputInitialTemplate(null);
+        setHideScriptTemplateSelector(false);
+        setShowScriptInput(false);
+        setShowWorkflowPreset(true);
       }
     } catch (error: any) {
       // 后端此接口通常不会返回404（不存在时返回 null）
@@ -437,15 +446,37 @@ export default function AnimeProjectPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Script Input Modal */}
+      {/* Workflow Preset + Script Input Modal */}
       {selectedFragmentId !== null && (
-        <ScriptInputModal
-          open={showScriptInput}
-          onOpenChange={setShowScriptInput}
-          projectId={project.id}
-          fragmentId={selectedFragmentId}
-          onSuccess={handleScriptGenerateSuccess}
-        />
+        <>
+          <WorkflowPresetModal
+            open={showWorkflowPreset}
+            onOpenChange={setShowWorkflowPreset}
+            projectId={project.id}
+            fragmentId={selectedFragmentId}
+            onApplied={({ initialTemplate, hideTemplateSelector }) => {
+              setScriptInputInitialTemplate(initialTemplate);
+              setHideScriptTemplateSelector(hideTemplateSelector);
+              setShowWorkflowPreset(false);
+              setShowScriptInput(true);
+            }}
+            onSkip={() => {
+              setShowWorkflowPreset(false);
+              setScriptInputInitialTemplate(null);
+              setHideScriptTemplateSelector(false);
+              setShowScriptInput(true);
+            }}
+          />
+          <ScriptInputModal
+            open={showScriptInput}
+            onOpenChange={setShowScriptInput}
+            projectId={project.id}
+            fragmentId={selectedFragmentId}
+            onSuccess={handleScriptGenerateSuccess}
+            initialTemplate={scriptInputInitialTemplate}
+            hideTemplateSelector={hideScriptTemplateSelector}
+          />
+        </>
       )}
     </div>
   );

@@ -72,8 +72,8 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      // 如果是认证错误，清除 token 并跳转到登录页
+    if (error.response?.status === 401) {
+      // 仅在“未登录/鉴权失败”时跳转登录；业务层面的 403（无权限）不应被当成需要重新登录
       if (typeof window !== 'undefined') {
         const currentPath = window.location.pathname;
         // 如果当前已经在登录页或注册页，不要跳转（避免登录失败时刷新页面）

@@ -7,7 +7,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast-provider";
 import { cn, toThumbnailUrl } from "@/lib/utils";
 import api from "@/lib/api";
@@ -32,7 +31,6 @@ export default function LeftPanel({
   // 编辑状态
   const [description, setDescription] = useState("");
   const [dialogue, setDialogue] = useState("");
-  const [duration, setDuration] = useState(5);
   const [selectedCharIds, setSelectedCharIds] = useState<number[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState<number | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
@@ -46,7 +44,6 @@ export default function LeftPanel({
     if (selectedShot) {
       setDescription(selectedShot.description || "");
       setDialogue(selectedShot.dialogue || "");
-      setDuration(selectedShot.duration || 5);
       setSelectedCharIds(selectedShot.refCharacterIds || []);
       setSelectedSceneId(selectedShot.refSceneId);
       setHasChanges(false);
@@ -59,12 +56,11 @@ export default function LeftPanel({
       const changed =
         description !== (selectedShot.description || "") ||
         dialogue !== (selectedShot.dialogue || "") ||
-        duration !== (selectedShot.duration || 5) ||
         JSON.stringify(selectedCharIds) !== JSON.stringify(selectedShot.refCharacterIds || []) ||
         selectedSceneId !== selectedShot.refSceneId;
       setHasChanges(changed);
     }
-  }, [description, dialogue, duration, selectedCharIds, selectedSceneId, selectedShot]);
+  }, [description, dialogue, selectedCharIds, selectedSceneId, selectedShot]);
 
   // 保存编辑
   const handleSave = async () => {
@@ -73,7 +69,6 @@ export default function LeftPanel({
       await api.put(`/ai-agent/shots/${selectedShot.id}/details`, {
         description,
         dialogue,
-        duration,
         refCharacterIds: selectedCharIds,
         refSceneId: selectedSceneId
       });
@@ -160,29 +155,6 @@ export default function LeftPanel({
                 placeholder="输入角色对白..."
                 className="min-h-[60px] bg-zinc-800/50 border-zinc-700/50 text-sm resize-none rounded-lg focus:border-amber-500/50 focus:ring-amber-500/20 placeholder:text-zinc-600"
               />
-            </div>
-
-            {/* 时长设置 */}
-            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800/50">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-blue-500/15 flex items-center justify-center">
-                    <span className="text-blue-400 text-[10px] font-bold">秒</span>
-                  </div>
-                  <span className="text-xs font-medium text-zinc-300">镜头时长</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={duration}
-                    onChange={e => setDuration(Number(e.target.value))}
-                    className="w-16 h-8 bg-zinc-800/50 border-zinc-700/50 text-sm text-center rounded-lg"
-                  />
-                  <span className="text-xs text-zinc-500">秒</span>
-                </div>
-              </div>
             </div>
 
             {/* 角色选择 */}

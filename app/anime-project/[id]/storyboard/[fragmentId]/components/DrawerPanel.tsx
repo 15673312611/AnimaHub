@@ -43,9 +43,7 @@ interface Props {
   onChangeImageModel: (modelId: number) => void;
   videoModelIdByMode: Record<StoryboardVideoModeCode, number | null>;
   onChangeVideoModel: (mode: StoryboardVideoModeCode, modelId: number) => void;
-  defaultDuration: number;
   defaultRatio: string;
-  onChangeDuration: (duration: number) => void;
   onChangeRatio: (ratio: string) => void;
   // 视频提示词推理模板
   selectedVideoInferenceTemplate?: string;
@@ -85,9 +83,7 @@ export default function DrawerPanel({
   onChangeImageModel,
   videoModelIdByMode,
   onChangeVideoModel,
-  defaultDuration,
   defaultRatio,
-  onChangeDuration,
   onChangeRatio,
   selectedVideoInferenceTemplate = "",
   selectedVideoInferenceTemplateType = 'system',
@@ -424,9 +420,7 @@ export default function DrawerPanel({
           <VideoModelPanel
             videoModelIdByMode={videoModelIdByMode}
             onChangeVideoModel={onChangeVideoModel}
-            defaultDuration={defaultDuration}
             defaultRatio={defaultRatio}
-            onChangeDuration={onChangeDuration}
             onChangeRatio={onChangeRatio}
           />
         )}
@@ -487,6 +481,14 @@ export default function DrawerPanel({
 }
 
 // 角色配置面板 - 直接可编辑，无需编辑按钮
+interface ImportCharacterItem {
+  id: number;
+  name: string;
+  identity?: string | null;
+  prompt?: string | null;
+  imageUrl?: string | null;
+}
+
 function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewImage, extracting, startExtracting, stopExtracting, selectedImageModelId }: { 
   workflow: WorkflowData;
   projectId: number;
@@ -500,10 +502,16 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
 }) {
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [adding, setAdding] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addTab, setAddTab] = useState<"manual" | "import">("manual");
   const [newName, setNewName] = useState("");
   const [newIdentity, setNewIdentity] = useState("");
   const [newPrompt, setNewPrompt] = useState("");
+  const [importLoading, setImportLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importQuery, setImportQuery] = useState("");
+  const [importCandidates, setImportCandidates] = useState<ImportCharacterItem[]>([]);
+  const [selectedImportIds, setSelectedImportIds] = useState<Set<number>>(() => new Set());
   const [generating, setGenerating] = useState<number | null>(null);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [assetModalOpen, setAssetModalOpen] = useState(false);
@@ -533,6 +541,87 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
     }
   }, [characters]);
 
+  const normalizeName = (value?: string | null) => (value || "").trim().toLowerCase();
+
+  const existingNameSet = useMemo(() => {
+    const set = new Set<string>();
+    characters.forEach(char => {
+      const normalized = normalizeName(char.name);
+      if (normalized) {
+        set.add(normalized);
+      }
+    });
+    return set;
+  }, [characters]);
+
+  const loadImportCandidates = useCallback(async () => {
+    if (!projectId) return;
+    setImportLoading(true);
+    try {
+      const res = await api.get(`/ai-agent/projects/${projectId}/assets`, {
+        params: { category: "character" },
+        timeout: 15000
+      });
+      const list = Array.isArray(res.data?.characters) ? res.data.characters : [];
+      const pickBetter = (current: ImportCharacterItem, next: ImportCharacterItem) => {
+        const currentPrompt = (current.prompt || "").trim();
+        const nextPrompt = (next.prompt || "").trim();
+        if (!currentPrompt && nextPrompt) return next;
+        if (currentPrompt && !nextPrompt) return current;
+
+        const currentIdentity = (current.identity || "").trim();
+        const nextIdentity = (next.identity || "").trim();
+        if (!currentIdentity && nextIdentity) return next;
+        if (currentIdentity && !nextIdentity) return current;
+
+        const currentImage = (current.imageUrl || "").trim();
+        const nextImage = (next.imageUrl || "").trim();
+        if (!currentImage && nextImage) return next;
+        if (currentImage && !nextImage) return current;
+
+        return current;
+      };
+
+      const byName = new Map<string, ImportCharacterItem>();
+      list.forEach((item: ImportCharacterItem) => {
+        const key = normalizeName(item.name);
+        if (!key) return;
+        const existing = byName.get(key);
+        if (!existing) {
+          byName.set(key, item);
+          return;
+        }
+        byName.set(key, pickBetter(existing, item));
+      });
+
+      setImportCandidates(Array.from(byName.values()));
+    } catch (error: any) {
+      console.error("加载可导入角色失败:", error);
+      toast(error.response?.data?.error || "加载可导入角色失败", "error");
+      setImportCandidates([]);
+    } finally {
+      setImportLoading(false);
+    }
+  }, [projectId, toast]);
+
+  useEffect(() => {
+    if (!addModalOpen) return;
+    setSelectedImportIds(new Set());
+    setImportQuery("");
+    setAddTab("manual");
+    void loadImportCandidates();
+  }, [addModalOpen, loadImportCandidates]);
+
+  const closeAddModal = () => {
+    setAddModalOpen(false);
+    setAddTab("manual");
+    setNewName("");
+    setNewIdentity("");
+    setNewPrompt("");
+    setSelectedImportIds(new Set());
+    setImportQuery("");
+  };
+
 
   // 提取角色
   const handleExtractCharacters = async () => {
@@ -558,13 +647,75 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
         prompt: newPrompt
       });
       toast("角色已添加", "success");
-      setAdding(false);
-      setNewName("");
-      setNewIdentity("");
-      setNewPrompt("");
+      closeAddModal();
       onUpdate();
     } catch (error: any) {
       toast(error.response?.data?.error || "添加失败", "error");
+    }
+  };
+
+  const filteredImportCandidates = useMemo(() => {
+    const query = importQuery.trim().toLowerCase();
+    return importCandidates.filter((item) => {
+      const name = (item.name || "").trim();
+      if (!name) return false;
+      if (!query) return true;
+      return name.toLowerCase().includes(query);
+    });
+  }, [importCandidates, importQuery]);
+
+  const selectableImportIds = useMemo(() => {
+    return filteredImportCandidates
+      .filter(item => !existingNameSet.has(normalizeName(item.name)))
+      .map(item => item.id);
+  }, [filteredImportCandidates, existingNameSet]);
+
+  const toggleImportSelection = (id: number) => {
+    setSelectedImportIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    setSelectedImportIds(prev => {
+      const allSelected =
+        selectableImportIds.length > 0 && selectableImportIds.every(id => prev.has(id));
+      return new Set(allSelected ? [] : selectableImportIds);
+    });
+  };
+
+  const handleImportSelected = async () => {
+    const selected = importCandidates.filter(
+      item => selectedImportIds.has(item.id) && !existingNameSet.has(normalizeName(item.name))
+    );
+    if (selected.length === 0) {
+      toast("请先选择角色", "info");
+      return;
+    }
+    setImporting(true);
+    try {
+      await api.post(`/ai-agent/workflows/${workflow.id}/characters/import`, {
+        characters: selected.map(item => ({
+          sourceId: item.id,
+          name: item.name,
+          identity: item.identity,
+          prompt: item.prompt,
+          imageUrl: item.imageUrl
+        }))
+      });
+      toast(`已导入${selected.length}个角色`, "success");
+      closeAddModal();
+      onUpdate();
+    } catch (error: any) {
+      toast(error.response?.data?.error || "导入失败", "error");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -742,8 +893,8 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
       <div className="flex gap-3">
         <Button 
           className="flex-1 bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-500 hover:to-violet-500 shadow-lg shadow-purple-900/20"
-          onClick={() => setAdding(true)}
-          disabled={adding}
+          onClick={() => setAddModalOpen(true)}
+          disabled={addModalOpen}
         >
           <Plus className="w-4 h-4 mr-2" />
           添加角色
@@ -781,7 +932,7 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
       )}
 
       {/* 提示信息 */}
-      {characters.length === 0 && !adding && (
+      {characters.length === 0 && !addModalOpen && (
         <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl p-4">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center flex-shrink-0">
@@ -798,8 +949,102 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
       )}
 
       {/* 添加表单 */}
-      {adding && (
-        <div className="p-4 bg-zinc-900/80 rounded-xl space-y-3 border border-zinc-800">
+      {addModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="w-[880px] max-h-[85vh] bg-[#1a1a1e] rounded-2xl border border-zinc-800 shadow-2xl flex flex-col overflow-hidden">
+            {/* 澶撮儴 */}
+            <div className="h-16 border-b border-zinc-800 px-6 flex items-center justify-between flex-shrink-0 bg-gradient-to-r from-[#1f2230] to-[#1a1a1e]">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-purple-400" />
+                </div>
+                {/*
+                <div>
+                  <h3 className="font-semibold text-base">娣诲姞瑙掅壊</h3>
+                  <p className="text-xs text-zinc-500">鎵姩娣诲姞鎴栦粠椤圭洰鍘嗗彶鍙鍏�</p>
+                </div>
+                */}
+                <div>
+                  <h3 className="font-semibold text-base">添加角色</h3>
+                  <p className="text-xs text-zinc-500">支持手动添加与批量导入历史角色</p>
+                </div>
+              </div>
+              <button onClick={closeAddModal} className="p-2.5 hover:bg-zinc-800 rounded-xl transition-colors">
+                <X className="w-5 h-5 text-zinc-400" />
+              </button>
+            </div>
+
+            {/* 鍐呭 */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-1 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setAddTab("manual")}
+                  className={cn(
+                    "flex-1 h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all",
+                    addTab === "manual"
+                      ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow shadow-purple-900/20"
+                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80"
+                  )}
+                >
+                  <Plus className="w-4 h-4" />
+                  手动添加
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAddTab("import")}
+                  className={cn(
+                    "flex-1 h-9 rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all",
+                    addTab === "import"
+                      ? "bg-gradient-to-r from-purple-600 to-violet-600 text-white shadow shadow-purple-900/20"
+                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/80"
+                  )}
+                >
+                  <Download className="w-4 h-4" />
+                  历史角色
+                  {importCandidates.length > 0 && (
+                    <span
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full",
+                        addTab === "import"
+                          ? "bg-white/20 text-white"
+                          : "bg-zinc-800/80 text-zinc-400"
+                      )}
+                    >
+                      {importCandidates.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+              {/* 鎵姩娣诲姞 */}
+              {addTab === "manual" && (
+              <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-4 space-y-3">
+                {/*
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-semibold text-zinc-100">鎵姩娣诲姞</h4>
+                  <Button
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-500"
+                    onClick={handleAdd}
+                    disabled={!newName.trim()}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    纭娣诲姞
+                  </Button>
+                </div>
+                */}
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-semibold text-zinc-100">手动添加</h4>
+                  <Button
+                    size="sm"
+                    className="bg-purple-600 hover:bg-purple-500"
+                    onClick={handleAdd}
+                    disabled={!newName.trim()}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    确认添加
+                  </Button>
+                </div>
           <Input
             placeholder="角色名称"
             value={newName}
@@ -818,15 +1063,141 @@ function CharactersPanel({ workflow, projectId, characters, onUpdate, onPreviewI
             onChange={e => setNewPrompt(e.target.value)}
             className="bg-zinc-800 border-zinc-700 min-h-[80px] prompt-scrollbar"
           />
-          <div className="flex gap-2">
+          <div className="hidden">
             <Button className="flex-1 bg-purple-600 hover:bg-purple-500" onClick={handleAdd}>
               确认添加
             </Button>
-            <Button variant="outline" className="border-zinc-700" onClick={() => setAdding(false)}>
+            <Button variant="outline" className="border-zinc-700" onClick={closeAddModal}>
               取消
             </Button>
           </div>
         </div>
+              )}
+
+              {addTab === "import" && (
+        <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/60 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-zinc-100">从项目历史角色导入</h4>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-zinc-700"
+                onClick={handleToggleSelectAll}
+                disabled={selectableImportIds.length === 0}
+              >
+                {selectableImportIds.length > 0 && selectableImportIds.every(id => selectedImportIds.has(id))
+                  ? "清空选择"
+                  : "全选"}
+              </Button>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500"
+                onClick={handleImportSelected}
+                disabled={importing || selectedImportIds.size === 0}
+              >
+                {importing ? (
+                  <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-1" />
+                )}
+                导入选中 ({selectedImportIds.size})
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="搜索角色"
+              value={importQuery}
+              onChange={e => setImportQuery(e.target.value)}
+              className="bg-zinc-800 border-zinc-700"
+            />
+            <Button
+              variant="outline"
+              className="border-zinc-700"
+              onClick={loadImportCandidates}
+              disabled={importLoading}
+            >
+              刷新
+            </Button>
+          </div>
+
+          {importLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
+            </div>
+          ) : filteredImportCandidates.length === 0 ? (
+            <div className="text-center py-10 text-zinc-500">
+              <Users className="w-10 h-10 mx-auto mb-2 opacity-20" />
+              <p className="text-sm">暂无可导入角色</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3 max-h-[360px] overflow-y-auto pr-1">
+              {filteredImportCandidates.map(item => {
+                const normalized = normalizeName(item.name);
+                const exists = existingNameSet.has(normalized);
+                const selected = selectedImportIds.has(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => !exists && toggleImportSelection(item.id)}
+                    disabled={exists}
+                    className={cn(
+                      "rounded-xl border text-left overflow-hidden transition-all",
+                      exists
+                        ? "border-zinc-800/60 bg-zinc-900/40 opacity-50 cursor-not-allowed"
+                        : selected
+                          ? "border-emerald-500/70 bg-emerald-500/10"
+                          : "border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80"
+                    )}
+                  >
+                    <div className="relative aspect-square bg-zinc-800/80">
+                      {item.imageUrl ? (
+                        <img
+                          src={toThumbnailUrl(item.imageUrl, 200)}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                          <ImageIcon className="w-8 h-8" />
+                        </div>
+                      )}
+                      {selected && !exists && (
+                        <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
+                      )}
+                      {exists && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="text-xs text-white">已存在</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-sm font-medium text-zinc-100 truncate">{item.name}</p>
+                      {item.identity && (
+                        <p className="text-[11px] text-zinc-500 truncate">{item.identity}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+              )}
+      </div>
+
+      <div className="h-16 border-t border-zinc-800 px-6 flex items-center justify-end bg-[#161618]">
+        <Button variant="outline" className="border-zinc-700 hover:bg-zinc-800" onClick={closeAddModal}>
+          关闭
+        </Button>
+      </div>
+    </div>
+  </div>
       )}
 
       {/* 角色列表 - 优化布局 */}
@@ -1941,16 +2312,12 @@ function ImageModelPanel({
 function VideoModelPanel({
   videoModelIdByMode,
   onChangeVideoModel,
-  defaultDuration,
   defaultRatio,
-  onChangeDuration,
   onChangeRatio,
 }: {
   videoModelIdByMode: Record<StoryboardVideoModeCode, number | null>;
   onChangeVideoModel: (mode: StoryboardVideoModeCode, modelId: number) => void;
-  defaultDuration: number;
   defaultRatio: string;
-  onChangeDuration: (duration: number) => void;
   onChangeRatio: (ratio: string) => void;
 }) {
   const [modeTab, setModeTab] = useState<StoryboardVideoModeCode>("img2vid");
@@ -2074,37 +2441,13 @@ function VideoModelPanel({
         </div>
       )}
 
-      {/* 全局默认配置：时长和比例 */}
+      {/* 全局默认配置：比例 */}
       <div className="mt-6 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-4">
         <div className="flex items-center gap-2">
           <Settings2 className="w-4 h-4 text-zinc-400" />
           <span className="text-sm font-medium text-zinc-300">默认生成参数</span>
         </div>
         <p className="text-[10px] text-zinc-500">所有视频生成默认使用这个配置，在左侧镜头卡片中可单独调整</p>
-
-        {/* 时长选择器 */}
-        {selectedModelInfo?.supportedDurations && selectedModelInfo.supportedDurations.length > 0 && (
-          <div className="space-y-2">
-            <label className="text-xs text-zinc-400">视频时长（秒）</label>
-            <div className="flex gap-2">
-              {selectedModelInfo.supportedDurations.map((dur) => (
-                <button
-                  key={dur}
-                  type="button"
-                  onClick={() => onChangeDuration(dur)}
-                  className={cn(
-                    "flex-1 h-9 rounded-lg text-xs font-medium transition-all border",
-                    defaultDuration === dur
-                      ? "bg-purple-500/20 border-purple-500/40 text-purple-300"
-                      : "bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300"
-                  )}
-                >
-                  {dur}s
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* 比例选择器 */}
         <div className="space-y-2">
@@ -2321,7 +2664,7 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
         )}
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-3">
         <div className="flex p-1 rounded-lg bg-zinc-900/80 border border-zinc-800">
           <button
             onClick={() => setInferenceCategory('video')}
@@ -2348,37 +2691,38 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
             首帧提示词
           </button>
         </div>
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[10px] text-zinc-500 px-1">
           当前类型：{currentCategoryLabel}。{currentCategoryHint}
         </p>
       </div>
 
-      <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
-        <button
-          onClick={() => setActiveTab('system')}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
-            activeTab === 'system'
-              ? "bg-zinc-800 text-zinc-100 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-          )}
-        >
-          系统模板
-        </button>
-        <button
-          onClick={() => setActiveTab('user')}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
-            activeTab === 'user'
-              ? "bg-zinc-800 text-zinc-100 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-          )}
-        >
-          我的模板
-        </button>
-      </div>
+      <div className="space-y-3 pt-2">
+        <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+          <button
+            onClick={() => setActiveTab('system')}
+            className={cn(
+              "flex-1 px-3 py-2.5 rounded-md text-xs font-medium transition-all",
+              activeTab === 'system'
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            官方预设
+          </button>
+          <button
+            onClick={() => setActiveTab('user')}
+            className={cn(
+              "flex-1 px-3 py-2.5 rounded-md text-xs font-medium transition-all",
+              activeTab === 'user'
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            个人预设
+          </button>
+        </div>
 
-      <div className="min-h-[200px]">
+        <div className="space-y-2">
         {activeTab === 'system' ? (
           <div className="space-y-2">
             {!loadingSystem && systemTemplates.length > 0 && (
@@ -2412,21 +2756,21 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
                       className={cn(
                         "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
                         isSelected
-                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
-                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                          ? "bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900/50 border-zinc-900"
                       )}
                     >
-                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />}
                       <div className="flex items-start gap-3 pl-1">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "text-sm font-medium transition-colors",
-                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                              isSelected ? "text-blue-300" : "text-zinc-300 group-hover:text-zinc-200"
                             )}>
                               {template.templateName}
                             </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-blue-500 ml-auto" />}
                           </div>
                           {template.description && (
                             <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
@@ -2705,7 +3049,7 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
         )}
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-3">
         <div className="flex p-1 rounded-lg bg-zinc-900/80 border border-zinc-800">
           <button
             onClick={() => setInferenceCategory('video')}
@@ -2732,37 +3076,38 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
             首帧提示词
           </button>
         </div>
-        <p className="text-[10px] text-zinc-500">
+        <p className="text-[10px] text-zinc-500 px-1">
           当前类型：{currentCategoryLabel}。{currentCategoryHint}
         </p>
       </div>
 
-      <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
-        <button
-          onClick={() => setActiveTab('system')}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
-            activeTab === 'system'
-              ? "bg-zinc-800 text-zinc-100 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-          )}
-        >
-          系统模板
-        </button>
-        <button
-          onClick={() => setActiveTab('user')}
-          className={cn(
-            "flex-1 px-3 py-2 rounded-md text-xs font-medium transition-all",
-            activeTab === 'user'
-              ? "bg-zinc-800 text-zinc-100 shadow-sm"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
-          )}
-        >
-          我的模板
-        </button>
-      </div>
+      <div className="space-y-3 pt-2">
+        <div className="flex p-1 rounded-lg bg-zinc-900 border border-zinc-800">
+          <button
+            onClick={() => setActiveTab('system')}
+            className={cn(
+              "flex-1 px-3 py-2.5 rounded-md text-xs font-medium transition-all",
+              activeTab === 'system'
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            官方预设
+          </button>
+          <button
+            onClick={() => setActiveTab('user')}
+            className={cn(
+              "flex-1 px-3 py-2.5 rounded-md text-xs font-medium transition-all",
+              activeTab === 'user'
+                ? "bg-zinc-800 text-zinc-100 shadow-sm"
+                : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+            )}
+          >
+            个人预设
+          </button>
+        </div>
 
-      <div className="min-h-[200px]">
+        <div className="space-y-2">
         {activeTab === 'system' ? (
           <div className="space-y-2">
             {!loadingSystem && systemTemplates.length > 0 && (
@@ -2796,21 +3141,21 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
                       className={cn(
                         "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
                         isSelected
-                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
-                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                          ? "bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900/50 border-zinc-900"
                       )}
                     >
-                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />}
                       <div className="flex items-start gap-3 pl-1">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "text-sm font-medium transition-colors",
-                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                              isSelected ? "text-blue-300" : "text-zinc-300 group-hover:text-zinc-200"
                             )}>
                               {template.templateName}
                             </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-blue-500 ml-auto" />}
                           </div>
                           {template.description && (
                             <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">
@@ -2928,7 +3273,6 @@ function SettingsPanel({ workflow, onUpdate }: { workflow: WorkflowData; onUpdat
           </div>
         )}
       </div>
-
       {editModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="w-full max-w-lg bg-zinc-950 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -3705,21 +4049,21 @@ function InferencePanel({
                       className={cn(
                         "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
                         isSelected
-                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
-                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                          ? "bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900/50 border-zinc-900"
                       )}
                     >
-                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />}
                       <div className="flex items-start gap-3 pl-1">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "text-sm font-medium transition-colors",
-                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                              isSelected ? "text-blue-300" : "text-zinc-300 group-hover:text-zinc-200"
                             )}>
                               {template.templateName}
                             </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 ml-auto" />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-blue-500 ml-auto" />}
                           </div>
                           {template.description && (
                             <p className="text-xs text-zinc-500 mt-1 line-clamp-2 leading-relaxed">{template.description}</p>
@@ -4083,17 +4427,17 @@ function InferencePanel({
                       className={cn(
                         "w-full p-3 rounded-xl text-left transition-all border group relative overflow-hidden",
                         isSelected
-                          ? "bg-zinc-800/80 border-emerald-500/30 ring-1 ring-emerald-500/20"
-                          : "bg-transparent border-transparent hover:bg-zinc-900 border-zinc-900"
+                          ? "bg-blue-500/10 border-blue-500/30 ring-1 ring-blue-500/20"
+                          : "bg-transparent border-transparent hover:bg-zinc-900/50 border-zinc-900"
                       )}
                     >
-                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-500" />}
                       <div className="flex items-start gap-3 pl-1">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className={cn(
                               "text-sm font-medium transition-colors",
-                              isSelected ? "text-emerald-400" : "text-zinc-300 group-hover:text-zinc-200"
+                              isSelected ? "text-blue-300" : "text-zinc-300 group-hover:text-zinc-200"
                             )}>
                               {template.templateName}
                             </span>

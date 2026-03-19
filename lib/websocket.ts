@@ -38,9 +38,15 @@ class WebSocketService {
   private connected = false;
   private wasConnected = false;
   private reconnectHandlers: Set<ReconnectHandler> = new Set();
+  private lastTransportErrorAt = 0;
 
   connect() {
-    if (this.client?.connected) {
+    // Idempotent: multiple hooks may call connect() before the socket is fully up.
+    // Replacing the client while it's connecting/retrying will amplify errors and leak connections.
+    if (this.client) {
+      if (!this.client.active) {
+        this.client.activate();
+      }
       return;
     }
 
@@ -86,7 +92,15 @@ class WebSocketService {
         console.error('WebSocket STOMP error:', frame.headers['message']);
       },
       onWebSocketError: (event) => {
-        console.error('WebSocket transport error:', event);
+        // Avoid spamming production consoles; still log periodically for diagnostics.
+        const now = Date.now();
+        if (process.env.NODE_ENV === 'development' || now - this.lastTransportErrorAt > 30_000) {
+          this.lastTransportErrorAt = now;
+          console.error('WebSocket transport error:', event);
+        }
+      },
+      onWebSocketClose: () => {
+        this.connected = false;
       },
     });
 
@@ -109,6 +123,7 @@ class WebSocketService {
     this.reconnectHandlers.add(handler);
     return () => {
       this.reconnectHandlers.delete(handler);
+      this.maybeAutoDisconnect();
     };
   }
 
@@ -213,6 +228,7 @@ class WebSocketService {
       this.stompSubscriptions.delete(destination);
     }
     this.subscriptions.delete(destination);
+    this.maybeAutoDisconnect();
   }
 
   private resubscribeAll() {
@@ -234,6 +250,16 @@ class WebSocketService {
 
   isConnected() {
     return this.connected;
+  }
+
+  private maybeAutoDisconnect() {
+    const hasHandlers = Array.from(this.subscriptions.values()).some((handlers) => handlers.length > 0);
+    if (hasHandlers) return;
+    if (this.reconnectHandlers.size > 0) return;
+    if (!this.client) return;
+
+    // No active consumers; stop reconnect loops.
+    this.disconnect();
   }
 }
 

@@ -25,11 +25,22 @@ export function cn(...inputs: ClassValue[]) {
 export function toThumbnailUrl(url: string, width: number = 800): string {
   if (!url) return url;
   // 只处理阿里云OSS链接
-  if (url.includes("aliyuncs.com")) {
+  if ((url.startsWith("http://") || url.startsWith("https://")) && !url.startsWith("data:") && !url.startsWith("blob:")) {
     // 如果已经有处理参数，不重复添加
     if (url.includes("x-oss-process=")) return url;
     const separator = url.includes("?") ? "&" : "?";
     return `${url}${separator}x-oss-process=image/resize,w_${width}/quality,q_90/format,webp`;
   }
   return url;
+}
+
+export function toOriginalUrl(url: string): string {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("x-oss-process");
+    return u.toString();
+  } catch {
+    return url.split("?x-oss-process=")[0].split("&x-oss-process=")[0];
+  }
 }

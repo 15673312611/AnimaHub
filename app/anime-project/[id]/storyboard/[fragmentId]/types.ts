@@ -83,7 +83,6 @@ export interface ShotData {
   sortOrder: number;
   description: string | null;
   dialogue: string | null;
-  duration: number;
   refCharacterIds: number[];
   refSceneId: number | null;
   firstFramePrompt: string | null;
