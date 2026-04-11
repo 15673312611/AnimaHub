@@ -3,8 +3,8 @@ import "./globals.css";
 import ClientLayout from "@/components/ClientLayout";
 
 export const metadata: Metadata = {
-  title: "妙笔动画 - AI动漫创作平台",
-  description: "AI驱动的专业动漫和商业视频创作系统，基于Sora 2技术",
+  title: "妙笔动画 | AI 动漫与视频创作平台",
+  description: "妙笔动画是一套面向动画、分镜与商业视频的 AI 创作系统，帮助团队统一角色、风格、镜头与成片输出。",
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className="antialiased bg-black text-white min-h-screen">
+      <body className="min-h-screen bg-black text-white antialiased">
         <ClientLayout>
           {children}
         </ClientLayout>

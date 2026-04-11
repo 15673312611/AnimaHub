@@ -496,9 +496,15 @@ export default function StoryboardWorkbench({
     }
     setBatchGenerating("videos");
     try {
-      await api.post(`/ai-agent/workflows/${workflow.id}/batch-generate-videos`, {
-        shotIds: selectedShotIds
-      });
+      const requestBody: Record<string, unknown> = {
+        shotIds: selectedShotIds,
+        ratio: defaultRatio,
+        videoModelIdByMode
+      };
+      if (videoModelIdByMode.img2vid !== null) {
+        requestBody.videoModelId = videoModelIdByMode.img2vid;
+      }
+      await api.post(`/ai-agent/workflows/${workflow.id}/batch-generate-videos`, requestBody);
       toast("开始批量生成视频...", "success");
       onUpdate();
     } catch (error: any) {

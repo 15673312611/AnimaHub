@@ -15,13 +15,49 @@ import api from "@/lib/api";
 import { uploadToOss } from "@/lib/upload";
 import { AiAgentWorkflow, AiAgentShot } from "../page";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useVideoModels } from "@/lib/useVideoModels";
+import { useVideoModels, type VideoModel } from "@/lib/useVideoModels";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Props {
   workflow: AiAgentWorkflow;
   onUpdate: () => void;
   onBack: () => void;
+}
+
+function getSupportedDurations(model?: VideoModel): number[] {
+  const direct = (model?.supportedDurations || []).filter((value) => Number.isFinite(value));
+  if (direct.length > 0) {
+    return Array.from(new Set(direct)).sort((a, b) => a - b);
+  }
+
+  const fallback = [model?.defaultDuration, model?.maxDuration]
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return Array.from(new Set(fallback)).sort((a, b) => a - b);
+}
+
+function isDurationSupported(model: VideoModel | undefined, duration: number): boolean {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return false;
+  }
+  const supported = getSupportedDurations(model);
+  if (supported.length > 0) {
+    return supported.includes(duration);
+  }
+  if (typeof model?.maxDuration === "number") {
+    return duration <= model.maxDuration;
+  }
+  return true;
+}
+
+function formatDurationSupport(model?: VideoModel): string {
+  const supported = getSupportedDurations(model);
+  if (supported.length > 0) {
+    return `时长 ${supported.join("/")}s`;
+  }
+  if (typeof model?.maxDuration === "number") {
+    return `最长 ${model.maxDuration}s`;
+  }
+  return "时长默认";
 }
 
 export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
@@ -36,6 +72,8 @@ export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
   const { models: videoModels, defaultModel, loading: modelsLoading } = useVideoModels("ai-agent");
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const activeModelCode = selectedModel || defaultModel;
+  const selectedModelInfo = videoModels.find((model) => model.value === activeModelCode);
 
   // 设置默认模型
   useEffect(() => {
@@ -57,15 +95,24 @@ export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
 
   const shots = workflow.shots || [];
 
-  const handleGenerateVideo = async (shotId: number) => {
-    setGenerating(prev => ({ ...prev, [shotId]: true }));
+  const handleGenerateVideo = async (shot: AiAgentShot) => {
+    const duration = shot.duration || selectedModelInfo?.defaultDuration || 5;
+    if (!isDurationSupported(selectedModelInfo, duration)) {
+      toast(`Model does not support ${duration}s. ${formatDurationSupport(selectedModelInfo)}`, "error");
+      return;
+    }
+
+    setGenerating(prev => ({ ...prev, [shot.id]: true }));
     try {
-      await api.post(`/ai-agent/shots/${shotId}/generate-video`, { videoModel: selectedModel || defaultModel });
+      await api.post(`/ai-agent/shots/${shot.id}/generate-video`, {
+        videoModel: activeModelCode,
+        duration
+      });
       toast("开始生成视频...", "success");
       onUpdate();
     } catch (error: any) {
       toast(error.response?.data?.error || "生成失败", "error");
-      setGenerating(prev => ({ ...prev, [shotId]: false }));
+      setGenerating(prev => ({ ...prev, [shot.id]: false }));
     }
   };
 
@@ -73,13 +120,23 @@ export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
     const pendingShots = shots.filter(s => s.firstFrameStatus === "COMPLETED" && (s.videoStatus === "PENDING" || s.videoStatus === "FAILED"));
     if (pendingShots.length === 0) { toast("没有可生成的视频（需要先有第一帧图片）", "info"); return; }
     
+    const invalidShots = pendingShots.filter((shot) => {
+      const duration = shot.duration || selectedModelInfo?.defaultDuration || 5;
+      return !isDurationSupported(selectedModelInfo, duration);
+    });
+    if (invalidShots.length > 0) {
+      const shotList = invalidShots.map((shot) => shot.sortOrder).join(", ");
+      toast(`Selected model does not support shots ${shotList}. ${formatDurationSupport(selectedModelInfo)}`, "error");
+      return;
+    }
+
     const newGenerating: Record<number, boolean> = {};
     pendingShots.forEach(s => { newGenerating[s.id] = true; });
     setGenerating(prev => ({ ...prev, ...newGenerating }));
     setBatchGenerating(true);
     
     try {
-      await api.post(`/ai-agent/workflows/${workflow.id}/generate-all-videos`, { videoModel: selectedModel || defaultModel });
+      await api.post(`/ai-agent/workflows/${workflow.id}/generate-all-videos`, { videoModel: activeModelCode });
       toast(`开始批量生成 ${pendingShots.length} 个视频...`, "success");
       onUpdate();
     } catch (error: any) {
@@ -182,13 +239,18 @@ export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
                     >
                       <div className="flex flex-col gap-0.5">
                         <span className="text-xs font-medium">{m.label}</span>
-                        <span className="text-[10px] opacity-60">{m.desc}</span>
+                        <span className="text-[10px] opacity-60">{formatDurationSupport(m)}</span>
                       </div>
                     </button>
                   ))}
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
+            {selectedModelInfo && (
+              <span className="text-[11px] text-zinc-500 px-2 py-1 rounded-md bg-white/5 border border-white/5">
+                {formatDurationSupport(selectedModelInfo)}
+              </span>
+            )}
 
             <Button variant="outline" onClick={handleBatchDownload} disabled={completedVideos === 0} size="sm" className="border-zinc-700 hover:bg-zinc-800 rounded-lg h-8">
               <Download className="w-3.5 h-3.5 mr-1.5" /> 导出全部
@@ -212,7 +274,7 @@ export default function Step4Videos({ workflow, onUpdate, onBack }: Props) {
               isGenerating={generating[shot.id] || shot.videoStatus === "GENERATING"}
               selectedModel={selectedModel || defaultModel}
               onToggleExpand={() => setExpandedShot(expandedShot === shot.id ? null : shot.id)}
-              onGenerate={() => handleGenerateVideo(shot.id)}
+              onGenerate={() => handleGenerateVideo(shot)}
               onDownload={() => handleDownload(shot)}
               onPreviewVideo={setPreviewVideo}
               onPreviewImage={setPreviewImage}

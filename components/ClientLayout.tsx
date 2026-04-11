@@ -8,6 +8,9 @@ import { ToastProvider } from "./ui/toast-provider";
 import { ConfirmProvider } from "./ui/confirm-dialog";
 import { prefetchRegisterSettings } from "@/lib/register-settings";
 
+const CHUNK_RELOAD_TS_KEY = "__anima_chunk_reload_ts__";
+const CHUNK_RELOAD_COOLDOWN_MS = 15000;
+
 // 简单的加载占位符，保持布局稳定
 const PageLoader = memo(function PageLoader() {
   return (
@@ -31,6 +34,60 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     prefetchRegisterSettings();
+  }, []);
+
+  useEffect(() => {
+    const cleanupStaleServiceWorkers = async () => {
+      if (!("serviceWorker" in navigator)) return;
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      if (!registrations.length) return;
+
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+    };
+
+    void cleanupStaleServiceWorkers().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const shouldReloadForChunkError = (text: string) =>
+      /ChunkLoadError|Loading chunk [\w/-]+ failed|Failed to load chunk|Failed to fetch dynamically imported module/i.test(
+        text
+      );
+
+    const reloadOnce = () => {
+      const now = Date.now();
+      const last = Number(sessionStorage.getItem(CHUNK_RELOAD_TS_KEY) || 0);
+      if (now - last < CHUNK_RELOAD_COOLDOWN_MS) return;
+      sessionStorage.setItem(CHUNK_RELOAD_TS_KEY, String(now));
+      window.location.reload();
+    };
+
+    const onError = (event: ErrorEvent) => {
+      const text = [event.message, event.error?.message].filter(Boolean).join(" ");
+      if (shouldReloadForChunkError(text)) reloadOnce();
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const text =
+        typeof reason === "string"
+          ? reason
+          : reason instanceof Error
+            ? `${reason.name} ${reason.message}`
+            : JSON.stringify(reason);
+      if (shouldReloadForChunkError(text)) reloadOnce();
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
   }, []);
 
   if (isAuthPage) {

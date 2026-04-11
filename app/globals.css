@@ -7,6 +7,22 @@
   --scrollbar-thumb-hover: linear-gradient(180deg, #71717a 0%, #52525b 100%);
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #07040f;
+  color: #ffffff;
+  color: #f0e8d8;
+  font-family: "Noto Sans SC", "Source Han Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+::selection {
+  background: rgba(168, 85, 247, 0.35);
+  color: #ffffff;
+}
+
 html,
 body,
 *:not(.scrollbar-hide) {
@@ -114,4 +130,149 @@ img[loading="lazy"]:not([src=""]) {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+.home-display {
+  font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", serif;
+}
+
+.portal-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.72), transparent 92%);
+}
+
+.portal-noise {
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.035) 0, transparent 18%),
+    radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.03) 0, transparent 22%),
+    radial-gradient(circle at 40% 80%, rgba(255, 255, 255, 0.02) 0, transparent 20%);
+}
+
+.portal-float {
+  animation: portal-float 14s ease-in-out infinite;
+}
+
+.portal-float-delay {
+  animation: portal-float 18s ease-in-out infinite;
+  animation-delay: -6s;
+}
+
+.portal-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.portal-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: -140% -20%;
+  background: linear-gradient(
+    115deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.16) 50%,
+    transparent 58%
+  );
+  transform: translateX(-55%) rotate(10deg);
+  animation: portal-shimmer 10s linear infinite;
+  pointer-events: none;
+}
+
+.portal-orbit {
+  animation: portal-orbit 22s linear infinite;
+}
+
+.portal-orbit-delay {
+  animation: portal-orbit-reverse 28s linear infinite;
+}
+
+.portal-drift-soft {
+  animation: portal-drift-soft 11s ease-in-out infinite;
+}
+
+@keyframes portal-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0);
+  }
+}
+
+@keyframes portal-shimmer {
+  0% {
+    transform: translateX(-70%) rotate(10deg);
+  }
+  100% {
+    transform: translateX(70%) rotate(10deg);
+  }
+}
+
+@keyframes portal-orbit {
+  from {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes portal-orbit-reverse {
+  from {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+}
+
+@keyframes portal-drift-soft {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+/* 漫剧风格按钮 */
+.manga-btn {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 30px rgba(255, 45, 120, 0.35), 0 0 60px rgba(168, 85, 247, 0.2);
+  transition: box-shadow 0.3s ease;
+}
+
+.manga-btn:hover {
+  box-shadow: 0 0 40px rgba(255, 45, 120, 0.55), 0 0 80px rgba(168, 85, 247, 0.35);
+}
+
+.manga-btn::after {
+  content: "";
+  position: absolute;
+  inset: -140% -20%;
+  background: linear-gradient(
+    115deg,
+    transparent 42%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 58%
+  );
+  transform: translateX(-55%) rotate(10deg);
+  animation: portal-shimmer 6s linear infinite;
+  pointer-events: none;
+}
+
+/* 漫剧网点背景 */
+.manga-dots {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* 国漫衬线标题字体 */
+.ink-title {
+  font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
 }
