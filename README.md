@@ -1,277 +1,423 @@
-# 🎬 AnimaHub - AI 动画创作平台
-
 <div align="center">
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Next.js](https://img.shields.io/badge/Next.js-16.0-black)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)
-![Node.js](https://img.shields.io/badge/Node.js-20+-green)
+# 🎬 AnimaHub
 
-**一个基于 AI 的现代化动画创作工具平台**
+### AI-Powered Animation & Video Production Platform
 
-[功能特性](#-功能特性) • [技术栈](#-技术栈) • [快速开始](#-快速开始) • [项目结构](#-项目结构) • [开发指南](#-开发指南)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TailwindCSS](https://img.shields.io/badge/Tailwind%20CSS-4.1-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+
+**端到端 AI 动画创作系统 — 从角色设计、剧本编排、分镜绘制到成片输出的全链路智能工作流**
+
+[🌐 在线体验](https://anima.cutb.cn/) · [📖 功能介绍](#-核心功能) · [🏗 系统架构](#-系统架构) · [🚀 快速部署](#-快速部署) · [📡 API 文档](#-api-概览)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## 🌐 在线体验
 
-AnimaHub 是一个集成了多种 AI 能力的动画创作平台，旨在为创作者提供从角色设计、场景构建到视频生成的一站式解决方案。平台支持 AI 图像生成、视频合成、漫画工作流等多种创作模式，让动画创作变得更加简单高效。
+> **👉 [https://anima.cutb.cn/](https://anima.cutb.cn/)**
+>
+> 无需部署，注册即可体验全部功能。支持 AI 图像生成、视频合成、剧本工坊、分镜编辑等完整创作流程。
 
-作者微信:soe303 
+---
 
-项目截图:
-<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/34541fe2-1b10-45c0-ba4d-736691f85c9f" />
+## 📸 功能预览
 
-<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/d8eefac7-dffc-4d1e-9da4-c2384f0722fe" />
-<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/18916594-891d-49ba-9604-281d4a86e2bf" />
-<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/6b756172-4c76-4f9d-b900-8ea11e43c127" />
-<img width="2559" height="1398" alt="image" src="https://github.com/user-attachments/assets/ecb80571-580b-4555-b7b9-c5e41e8a3ec3" />
+<table>
+  <tr>
+    <td align="center"><b>🎨 AI 图像生成</b><br/>多模型智能绘图引擎</td>
+    <td align="center"><b>🎬 AI 视频合成</b><br/>一键图生视频 / 融合视频</td>
+  </tr>
+  <tr>
+    <td align="center"><b>📝 剧本工坊</b><br/>AI Agent 全自动分镜流水线</td>
+    <td align="center"><b>📖 漫画工作流</b><br/>分镜到成品的完整链路</td>
+  </tr>
+</table>
 
+---
 
+## ✨ 核心功能
 
-## ✨ 功能特性
+### 🤖 多模型 AI 图像生成引擎
 
-### 🎨 素材管理系统
-- **角色库管理** - 创建和管理动画角色，支持 AI 生成和手动上传
-- **场景库管理** - 构建丰富的场景素材库，支持多种场景类型
-- **道具库管理** - 管理动画所需的各类道具和物品
-- **特效库管理** - 添加和管理视觉特效素材
+- 集成 **Nano Banana 2K/4K**、**Midjourney**、**即梦 (Jimeng)** 等主流 AI 绘图模型
+- 智能提示词优化系统 — 支持中文自然语言输入，自动翻译 & 语义增强
+- 参考图驱动生成 — 上传参考图片引导 AI 输出风格一致的素材
+- 批量并行生成 — 支持多任务队列，高效产出大量素材
+- 风格预设库 — 内置多种动画风格模板，一键切换画风
 
-### 🤖 AI 生成能力
-- **AI 图像生成** - 集成多种 AI 模型（Nano Banana 2K/4K、Midjourney）
-- **智能提示词优化** - 支持中文提示词，自动优化生成效果
-- **参考图上传** - 支持本地图片上传作为生成参考
-- **批量生成** - 高效的批量素材生成功能
+### 🎬 AI 视频生成与合成
 
-### 🎬 视频创作工作流
-- **片段式编辑** - 将动画拆分为多个片段进行精细化管理
-- **素材关联** - 为每个片段关联角色、场景、道具和特效
-- **AI 视频生成** - 基于 AI 的视频生成功能
-- **漫画工作流** - 专门的漫画创作流程支持
+- 多视频模型支持，可配置时长、分辨率等参数
+- **图生视频** — 静态素材一键转化为动态视频片段
+- **融合视频** — 多片段智能拼接，自动过渡衔接
+- WebSocket 实时进度推送 — 生成过程全程可视化追踪
+- 视频片段管理 — 按分镜组织，支持重新生成与替换
 
-### 💎 现代化 UI/UX
-- **响应式设计** - 完美适配桌面和移动设备
-- **暗色主题** - 精心设计的暗色界面，减少视觉疲劳
-- **流畅动画** - 基于 Framer Motion 的流畅交互动画
-- **拖拽上传** - 现代化的文件上传体验
+### 📝 剧本工坊 (Script Workshop)
 
-## 🛠 技术栈
+- **全功能分镜编辑器** — 可视化分镜脚本编排，逐镜头精细调整
+- **小说/文本导入** — 支持导入长篇小说文本，AI 自动拆解为分镜脚本
+- **AI Agent 自动化流水线** — 基于 AI Agent Workflow 的全自动创作管线：
+  - 剧本分析 → 角色提取 → 场景规划 → 分镜生成 → 图像生成 → 视频合成
+  - 支持自定义工作流预设，可配置每个环节的 AI 模型与参数
+  - 实时 WebSocket 推送工作流执行状态与阶段进度
+- **工作流预设管理** — 保存和复用常用的创作流水线配置
 
-### 前端
-- **框架**: Next.js 16.0 + React 19.2
-- **语言**: TypeScript 5.9
-- **样式**: TailwindCSS 4.1 + Radix UI
-- **动画**: Framer Motion 12.23
-- **图标**: Lucide React
-- **HTTP 客户端**: Axios
+### 🎨 素材资产管理系统
 
-### 后端
-- **运行时**: Node.js + Express
-- **语言**: TypeScript
-- **数据库**: MySQL + Prisma ORM
-- **认证**: JWT + bcryptjs
-- **文件处理**: Fluent-FFmpeg
-- **AI 集成**: OpenAI SDK
+| 素材类型 | 功能说明 |
+|---------|---------|
+| **角色库** | AI 生成 / 手动上传角色立绘，支持多角度、多表情管理 |
+| **场景库** | 构建场景素材库，支持室内/室外/幻想等多种场景类型 |
+| **道具库** | 管理动画所需道具与物品素材 |
+| **特效库** | 视觉特效素材管理，支持粒子、光效等分类 |
+| **公共素材库** | 平台级共享素材，所有用户可直接引用 |
 
-## 🚀 快速开始
+### 💰 积分与支付系统
 
-### 环境要求
+- 虚拟积分 (Coin) 体系 — AI 生成按模型计费，精细化成本控制
+- 充值套餐管理 — 多档位充值方案，支持在线支付
+- 支付网关集成 — 对接 YiZF 支付平台，支持主流支付方式
+- 消费明细追踪 — 完整的积分流水与消费记录
 
-- Node.js 20+
-- MySQL 8.0+
-- npm 或 yarn
+### 🔔 实时通信与通知
 
-### 安装步骤
+- **STOMP over WebSocket** — 基于 STOMP 协议的双向实时通信
+- AI 任务进度实时推送 — 图像/视频生成进度实时反馈
+- 工作流状态同步 — Agent Workflow 各阶段状态实时更新
+- 站内通知系统 — 任务完成、系统公告等消息推送
 
-1. **克隆项目**
-```bash
-git clone https://github.com/yourusername/animahub.git
-cd animahub
+### 🛡 管理后台
+
+- 独立的 **Vue 3 + Element Plus** 管理面板
+- AI 模型配置管理 — 动态配置可用模型、定价、路由策略
+- 提示词模板管理 — 维护和优化 AI 提示词模板库
+- 用户管理与数据统计 — 用户行为分析、资源使用监控
+- 风格预设管理 — 平台级风格模板的增删改查
+
+---
+
+## 🏗 系统架构
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Client (Browser)                         │
+│                   Next.js 16 + React 19 + TS                    │
+│         TailwindCSS 4.1 · Radix UI · Framer Motion             │
+└──────────────┬──────────────────────┬───────────────────────────┘
+               │ HTTP (Axios)         │ WebSocket (STOMP.js)
+               ▼                      ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    Java Server (Spring Boot 3.2)                 │
+│  ┌────────────┐ ┌──────────────┐ ┌────────────┐ ┌────────────┐  │
+│  │ Auth (JWT) │ │ AI Gateway   │ │ WebSocket  │ │ Payment    │  │
+│  │ + Security │ │ Multi-Model  │ │ STOMP Broker│ │ Gateway    │  │
+│  └────────────┘ └──────────────┘ └────────────┘ └────────────┘  │
+│  ┌────────────┐ ┌──────────────┐ ┌────────────┐ ┌────────────┐  │
+│  │ AI Agent   │ │ Script       │ │ Asset      │ │ File/OSS   │  │
+│  │ Workflow   │ │ Workshop     │ │ Management │ │ Storage    │  │
+│  └────────────┘ └──────────────┘ └────────────┘ └────────────┘  │
+│                  MyBatis Plus · Spring WebFlux                    │
+└──────────────┬──────────────────────┬───────────────────────────┘
+               │                      │
+               ▼                      ▼
+┌──────────────────────┐  ┌───────────────────────┐
+│   MySQL 8.0          │  │   Aliyun OSS          │
+│   40+ Data Tables    │  │   Cloud File Storage  │
+│   Druid Pool         │  │   CDN Acceleration    │
+└──────────────────────┘  └───────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     Admin Panel (独立部署)                        │
+│              Vue 3.4 + Element Plus + Pinia + Vite               │
+│              独立 Spring Boot 后端 · 独立数据库连接                │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-2. **安装依赖**
-```bash
-# 安装客户端依赖
-cd client
-npm install
+### 技术栈详情
 
-# 安装服务端依赖
-cd ../server
-npm install
-```
+<table>
+  <tr>
+    <th>层级</th>
+    <th>技术</th>
+    <th>说明</th>
+  </tr>
+  <tr>
+    <td rowspan="6"><b>Frontend</b></td>
+    <td>Next.js 16 (App Router)</td>
+    <td>SSR/SSG 混合渲染，Turbopack 开发加速</td>
+  </tr>
+  <tr>
+    <td>React 19 + TypeScript 5.9</td>
+    <td>类型安全的现代 React 开发</td>
+  </tr>
+  <tr>
+    <td>TailwindCSS 4.1 + Radix UI</td>
+    <td>原子化 CSS + 无障碍组件原语</td>
+  </tr>
+  <tr>
+    <td>Framer Motion 12</td>
+    <td>声明式动画引擎，流畅交互体验</td>
+  </tr>
+  <tr>
+    <td>STOMP.js + SockJS</td>
+    <td>WebSocket 实时双向通信</td>
+  </tr>
+  <tr>
+    <td>JSZip + FileSaver</td>
+    <td>客户端文件打包与导出</td>
+  </tr>
+  <tr>
+    <td rowspan="6"><b>Backend</b></td>
+    <td>Java 17 + Spring Boot 3.2</td>
+    <td>企业级后端框架，生产就绪</td>
+  </tr>
+  <tr>
+    <td>Spring Security + JWT</td>
+    <td>完整的认证授权体系</td>
+  </tr>
+  <tr>
+    <td>Spring WebFlux</td>
+    <td>响应式 HTTP 客户端，异步调用外部 AI API</td>
+  </tr>
+  <tr>
+    <td>MyBatis Plus 3.5</td>
+    <td>增强型 ORM，代码生成器加速开发</td>
+  </tr>
+  <tr>
+    <td>Spring WebSocket (STOMP)</td>
+    <td>实时消息推送，任务进度同步</td>
+  </tr>
+  <tr>
+    <td>FFmpeg (bramp wrapper)</td>
+    <td>服务端视频处理与转码</td>
+  </tr>
+  <tr>
+    <td rowspan="3"><b>Infrastructure</b></td>
+    <td>MySQL 8.0 + Druid</td>
+    <td>关系型存储 + 高性能连接池</td>
+  </tr>
+  <tr>
+    <td>Aliyun OSS</td>
+    <td>云端对象存储，CDN 加速分发</td>
+  </tr>
+  <tr>
+    <td>Docker Compose</td>
+    <td>一键容器化部署，前后端编排</td>
+  </tr>
+  <tr>
+    <td rowspan="3"><b>Admin</b></td>
+    <td>Vue 3.4 + Vite 7.3</td>
+    <td>独立管理前端，快速构建</td>
+  </tr>
+  <tr>
+    <td>Element Plus 2.4</td>
+    <td>企业级 UI 组件库</td>
+  </tr>
+  <tr>
+    <td>Pinia + Vue Router</td>
+    <td>状态管理 + 路由控制</td>
+  </tr>
+</table>
 
-3. **配置环境变量**
-
-在 `server` 目录下创建 `.env` 文件：
-```env
-# 数据库配置
-DATABASE_URL="mysql://user:password@localhost:3306/animahub"
-
-# JWT 密钥
-JWT_SECRET="your-secret-key"
-
-# OpenAI API Key (可选)
-OPENAI_API_KEY="your-openai-api-key"
-
-# 服务端口
-PORT=3001
-```
-
-4. **初始化数据库**
-```bash
-cd server
-npx prisma migrate dev
-npx prisma generate
-```
-
-5. **启动开发服务器**
-
-```bash
-# 启动后端服务 (在 server 目录)
-npm run dev
-
-# 启动前端服务 (在 client 目录，新终端)
-cd ../client
-npm run dev
-```
-
-6. **访问应用**
-
-打开浏览器访问 `http://localhost:3000`
+---
 
 ## 📁 项目结构
 
 ```
-animahub/
-├── client/                 # Next.js 前端应用
-│   ├── app/               # App Router 页面
-│   │   ├── anime-project/ # 动画项目管理
-│   │   ├── ai-image/      # AI 图像生成
-│   │   ├── brands/        # 品牌管理
-│   │   └── ...
-│   ├── components/        # React 组件
-│   │   ├── ui/           # UI 基础组件
-│   │   ├── Navbar.tsx    # 顶部导航
-│   │   └── Sidebar.tsx   # 侧边栏
-│   └── lib/              # 工具函数
-│       ├── api.ts        # API 客户端
-│       └── utils.ts      # 通用工具
+sora2/
+├── client/                          # Next.js 前端应用
+│   ├── app/                         # App Router 页面
+│   │   ├── ai-image/               # AI 图像生成工作台
+│   │   ├── anime-project/[id]/     # 动画项目编辑器
+│   │   ├── script-workshop/        # 剧本工坊
+│   │   │   ├── editor/             # 分镜编辑器 (核心模块)
+│   │   │   └── pipeline/[id]/      # AI Agent 工作流管线
+│   │   ├── characters/             # 角色素材库
+│   │   ├── videos/                 # 视频管理
+│   │   ├── scripts/[id]/           # 剧本管理
+│   │   ├── dashboard/              # 用户仪表盘
+│   │   ├── settings/               # 用户设置
+│   │   ├── pay-result/             # 支付回调
+│   │   └── api/                    # Next.js API Routes
+│   ├── components/                  # 共享组件
+│   │   ├── ui/                     # shadcn/ui 基础组件
+│   │   ├── Navbar.tsx              # 全局导航栏
+│   │   └── Sidebar.tsx             # 侧边栏导航
+│   └── lib/                        # 工具库
+│       ├── api.ts                  # Axios HTTP 客户端封装
+│       ├── websocket.ts            # STOMP WebSocket 管理
+│       └── utils.ts                # 通用工具函数
 │
-├── server/                # Express 后端服务
-│   ├── src/
-│   │   ├── routes/       # API 路由
-│   │   ├── controllers/  # 控制器
-│   │   ├── middleware/   # 中间件
-│   │   └── app.ts        # 应用入口
-│   ├── prisma/           # Prisma 配置
-│   │   └── schema.prisma # 数据库模型
-│   └── public/           # 静态文件
-│       ├── uploads/      # 用户上传文件
-│       └── exports/      # 导出文件
+├── java-server/                     # Spring Boot 后端服务
+│   └── src/main/java/com/sora/animecreator/
+│       ├── controller/             # 23+ REST 控制器
+│       ├── service/                # 40+ 业务服务
+│       ├── entity/                 # 数据实体
+│       ├── mapper/                 # MyBatis 数据映射
+│       ├── config/                 # 安全/WebSocket/OSS 配置
+│       └── websocket/              # STOMP 消息处理
 │
-└── README.md             # 项目文档
+├── admin/                           # 管理后台 (独立部署)
+│   ├── web/                        # Vue 3 管理前端
+│   └── server/                     # Spring Boot 管理后端
+│
+├── db/                              # SQL 迁移脚本 (40+ 版本)
+├── docker-compose.yml               # 容器编排配置
+└── docs/                            # 项目文档
 ```
 
-## 🔧 开发指南
+---
 
-### 代码规范
+## 🚀 快速部署
 
-- 使用 TypeScript 进行类型安全开发
-- 遵循 ESLint 配置的代码规范
-- 组件使用函数式组件 + Hooks
-- 使用 Tailwind CSS 进行样式开发
+### 环境要求
 
-### API 开发
+| 依赖 | 版本 | 说明 |
+|------|------|------|
+| Java | 17+ | 后端运行时 |
+| Node.js | 20+ | 前端构建 |
+| MySQL | 8.0+ | 数据存储 |
+| Docker | 20+ | 容器化部署 (可选) |
 
-后端 API 遵循 RESTful 设计规范：
-
-```typescript
-// 示例：创建角色素材
-POST /api/projects/:projectId/assets/characters/generate
-{
-  "name": "角色名称",
-  "prompt": "角色描述",
-  "model": "nano-banana-2-4k",
-  "referenceImage": "https://..."
-}
-```
-
-### 数据库迁移
+### 方式一：Docker Compose 一键部署
 
 ```bash
-# 创建新的迁移
-npx prisma migrate dev --name migration_name
+git clone https://github.com/yourusername/animahub.git
+cd animahub
 
-# 应用迁移
-npx prisma migrate deploy
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入数据库、OSS、AI API 等配置
 
-# 重置数据库
-npx prisma migrate reset
+# 启动服务
+docker-compose up -d
 ```
 
-## 🎨 UI 组件
+服务启动后：
+- 前端：`http://localhost:3105`
+- 后端 API：`http://localhost:3005`
 
-项目使用 Radix UI + TailwindCSS 构建组件系统：
+### 方式二：本地开发
 
-- **Dialog** - 模态对话框
-- **Tabs** - 标签页切换
-- **Select** - 下拉选择器
-- **ScrollArea** - 滚动区域
-- **Button** - 按钮组件
+```bash
+# 1. 克隆项目
+git clone https://github.com/yourusername/animahub.git
+cd animahub
 
-所有组件都支持暗色主题，并具有流畅的动画效果。
+# 2. 初始化数据库
+mysql -u root -p < db/init.sql
 
-## 📝 API 文档
+# 3. 启动后端 (java-server/)
+cd java-server
+mvn spring-boot:run
 
-### 认证相关
-- `POST /api/auth/register` - 用户注册
-- `POST /api/auth/login` - 用户登录
+# 4. 启动前端 (新终端)
+cd client
+npm install
+npm run dev
+```
 
-### 项目管理
-- `GET /api/projects` - 获取项目列表
-- `POST /api/projects` - 创建新项目
-- `GET /api/projects/:id` - 获取项目详情
-- `PUT /api/projects/:id` - 更新项目
-- `DELETE /api/projects/:id` - 删除项目
+---
 
-### 素材管理
-- `POST /api/projects/:id/assets/characters/generate` - AI 生成角色
-- `POST /api/projects/:id/assets/characters/upload` - 上传角色
-- `GET /api/projects/:id/assets/characters` - 获取角色列表
-- 类似的 API 适用于 scenes、props、effects
+## 📡 API 概览
 
-### 视频生成
-- `POST /api/videos/generate` - 生成视频
-- `GET /api/videos/task/:taskId` - 查询生成任务状态
+### 认证模块
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/auth/register` | 用户注册 (邮箱验证) |
+| POST | `/api/auth/login` | 用户登录，返回 JWT |
 
-## 🤝 贡献指南
+### AI 生成模块
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/ai/image/generate` | AI 图像生成 (多模型) |
+| POST | `/api/ai/video/generate` | AI 视频生成 |
+| GET  | `/api/ai/task/{taskId}` | 查询生成任务状态 |
+| POST | `/api/ai/prompt/optimize` | 提示词智能优化 |
+
+### 项目与素材
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| CRUD | `/api/projects/**` | 动画项目管理 |
+| CRUD | `/api/assets/**` | 素材资产管理 |
+| CRUD | `/api/scripts/**` | 剧本管理 |
+
+### 剧本工坊
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/script-workshop/import` | 小说/文本导入 |
+| CRUD | `/api/script-workshop/projects/**` | 工坊项目管理 |
+| POST | `/api/ai-agent/workflow/start` | 启动 AI Agent 工作流 |
+| GET  | `/api/ai-agent/workflow/{id}/status` | 工作流状态查询 |
+
+### WebSocket 订阅
+```
+STOMP Endpoint: /ws
+订阅主题: /topic/ai-agent/workflow/{workflowId}
+```
+
+---
+
+## 🔧 AI Agent 工作流引擎
+
+AnimaHub 的核心差异化能力 — 基于 AI Agent 的全自动动画创作管线：
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ 剧本分析  │───▶│ 角色提取  │───▶│ 场景规划  │───▶│ 分镜生成  │
+│ Script    │    │ Character │    │ Scene    │    │Storyboard│
+│ Analysis  │    │ Extract   │    │ Planning │    │ Generate │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+                                                       │
+                    ┌──────────────────────────────────┘
+                    ▼
+              ┌──────────┐    ┌──────────┐    ┌──────────┐
+              │ 图像生成  │───▶│ 视频合成  │───▶│ 成片输出  │
+              │ Image    │    │ Video    │    │ Final    │
+              │ Generate │    │ Compose  │    │ Export   │
+              └──────────┘    └──────────┘    └──────────┘
+```
+
+- 每个节点可独立配置 AI 模型、参数与提示词模板
+- 支持工作流预设 — 保存常用配置，一键复用
+- 全程 WebSocket 实时状态推送
+- 失败节点支持单独重试，无需重跑整条流水线
+
+---
+
+## 🤝 参与贡献
 
 欢迎提交 Issue 和 Pull Request！
 
 1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 发起 Pull Request
 
-## 📄 许可证
+---
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
+## 📄 开源协议
 
-## 📧 联系方式
-
-如有问题或建议，欢迎通过以下方式联系：
-
-- 提交 Issue
-- 发送邮件至：your-email@example.com
+本项目基于 [MIT License](LICENSE) 开源。
 
 ---
 
 <div align="center">
 
-**⭐ 如果这个项目对你有帮助，请给它一个 Star！**
+**🌟 如果这个项目对你有帮助，请点个 Star 支持一下！**
+
+**[🌐 在线体验](https://anima.cutb.cn/)** · **[🐛 反馈问题](../../issues)** · **[💡 功能建议](../../issues)**
 
 Made with ❤️ by AnimaHub Team
 
